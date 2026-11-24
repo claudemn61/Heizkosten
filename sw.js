@@ -1,0 +1,26 @@
+/* Service Worker – Heizkosten Bellwald. Bei jeder Version CACHE-Namen anpassen. */
+const VERSION = '0.01.00';
+const CACHE = 'hkb-' + VERSION;
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/icon.svg'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys()
+    .then(ks => Promise.all(ks.filter(k => k.startsWith('hkb-') && k !== CACHE).map(k => caches.delete(k))))
+    .then(() => self.clients.claim()));
+});
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  e.respondWith(caches.match(e.request, { ignoreSearch: true }).then(hit => {
+    const net = fetch(e.request).then(r => {
+      if (r && r.ok && new URL(e.request.url).origin === location.origin) {
+        const cp = r.clone();
+        caches.open(CACHE).then(c => c.put(e.request, cp));
+      }
+      return r;
+    }).catch(() => hit || caches.match('./index.html'));
+    return hit || net;
+  }));
+});

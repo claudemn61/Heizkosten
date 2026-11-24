@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 0.03.01 – 24.11.2026
+- Einstellung «Tages-Details (kWh je Tag) anzeigen» (Standard: aus) blendet Details-Modus, Details-Knopf, kWh-Felder und kWh-Kacheln aus oder ein
+
 ## 0.03.00 – 24.11.2026
 - Darstellung wählbar: Automatisch, Hell oder Dunkel (Daten → Einstellungen)
 

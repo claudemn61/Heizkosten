@@ -172,8 +172,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='0.03.00', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='0.03.01', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'0.03.01',d:'24.11.2026',t:['Einstellung «Tages-Details (kWh je Tag) anzeigen» (standardmässig aus): blendet Details-Modus, Details-Knopf, kWh-Felder und kWh-Kacheln im Erfassen-Tab ein oder aus']},
   {v:'0.03.00',d:'24.11.2026',t:['Darstellung wählbar: Automatisch, Hell oder Dunkel (Daten → Einstellungen)']},
   {v:'0.02.01',d:'24.11.2026',t:['Automatische Updates: Die App lädt sich bei neuer Version selbst neu (Seite wird immer zuerst vom Server geholt, Cache nur offline)']},
   {v:'0.02.00',d:'24.11.2026',t:['Kalender: Antippen schaltet einen Tag direkt zwischen Heiztag und Frostschutz um (langes Drücken öffnet die Details)',
@@ -292,7 +293,8 @@ $('#tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b)
 $('#ver').textContent='v'+VERSION;
 
 /* ====================== Tab: Erfassen ====================== */
-const mode=()=>S.settings.tapMode||'toggle';
+const dtl=()=>S.settings.showDaily===true;
+const mode=()=>{const m=S.settings.tapMode||'toggle';return(m==='detail'&&!dtl())?'toggle':m};
 const snap=ks=>ks.map(k=>[k,S.days[k]?JSON.parse(JSON.stringify(S.days[k])):null]);
 function undoer(sn){return()=>{sn.forEach(([k,v])=>{if(v)S.days[k]=v;else delete S.days[k]});save();refresh()}}
 let longPress=false;
@@ -331,7 +333,7 @@ function renderErfassen(){
       <button type="button" data-set-today="1" aria-pressed="${th}">Heiztag · ${S.settings.heatTemp} °C</button>
       <button type="button" data-set-today="0" aria-pressed="${!th}" data-h="0">Frostschutz · ${S.settings.frostTemp} °C</button>
     </div>
-    <div class="row" style="margin-top:10px"><button class="btn sm" data-open="${t}">Details &amp; kWh für heute …</button><button class="btn sm" id="btnRange">Zeitraum erfassen …</button></div>
+    <div class="row" style="margin-top:10px">${dtl()?`<button class="btn sm" data-open="${t}">Details &amp; kWh für heute …</button>`:''}<button class="btn sm" id="btnRange">Zeitraum erfassen …</button></div>
   </div>
   <div class="card">
     <div class="row" style="margin-bottom:10px">
@@ -343,17 +345,17 @@ function renderErfassen(){
     <div class="seg" role="group" aria-label="Antippen im Kalender" style="margin-bottom:8px">
       <button type="button" data-mode="toggle" aria-pressed="${mode()==='toggle'}">Umschalten</button>
       <button type="button" data-mode="range" aria-pressed="${mode()==='range'}">Zeitraum</button>
-      <button type="button" data-mode="detail" aria-pressed="${mode()==='detail'}">Details</button>
+      ${dtl()?`<button type="button" data-mode="detail" aria-pressed="${mode()==='detail'}">Details</button>`:''}
     </div>
     ${mode()==='range'?`<div class="seg frost" role="group" aria-label="Zustand für den Zeitraum" style="margin-bottom:8px"><button type="button" data-rh="1" aria-pressed="${ui.rangeH===1}">Heiztage</button><button type="button" data-rh="0" data-h="0" aria-pressed="${ui.rangeH===0}">Frostschutz</button></div>`:''}
-    <p class="small muted" style="margin:0 0 10px">${mode()==='toggle'?'Tag antippen: Heiztag ⇄ Frostschutz. Lang drücken: Details und kWh.':mode()==='range'?(ui.rangeStart?`Start ${fmtDate(ui.rangeStart)} – jetzt den letzten Tag antippen (gleicher Tag = nur dieser Tag).`:'Ersten Tag des Zeitraums antippen, dann den letzten.'):'Tag antippen: Details, kWh und Notiz öffnen.'}</p>
+    <p class="small muted" style="margin:0 0 10px">${mode()==='toggle'?'Tag antippen: Heiztag ⇄ Frostschutz. Lang drücken: Details'+(dtl()?' und kWh':'')+'.':mode()==='range'?(ui.rangeStart?`Start ${fmtDate(ui.rangeStart)} – jetzt den letzten Tag antippen (gleicher Tag = nur dieser Tag).`:'Ersten Tag des Zeitraums antippen, dann den letzten.'):'Tag antippen: Details, kWh und Notiz öffnen.'}</p>
     <div class="cal">${cells}</div>
     <div class="legendrow"><span><i style="background:var(--s1)"></i>Heiztag</span><span><i style="background:color-mix(in srgb,var(--s1) 30%,var(--page));outline:1px dashed var(--s1)"></i>geplant</span><span><i style="background:var(--page);border:1px solid var(--bd)"></i>Frostschutz</span><span><i style="background:var(--s2);border-radius:50%"></i>kWh/Notiz erfasst</span></div>
     <hr>
     <div class="tiles">
       <div class="tile"><div class="l">Heiztage ${MON[m]}</div><div class="v">${nH}</div></div>
-      <div class="tile"><div class="l">Verbrauch</div><div class="v">${eN?kwhF(eS):'–'}</div></div>
-      <div class="tile"><div class="l">PV-Produktion</div><div class="v">${pN?kwhF(pS):'–'}</div></div>
+      ${dtl()?`<div class="tile"><div class="l">Verbrauch</div><div class="v">${eN?kwhF(eS):'–'}</div></div>
+      <div class="tile"><div class="l">PV-Produktion</div><div class="v">${pN?kwhF(pS):'–'}</div></div>`:''}
     </div>
   </div>`;
 }
@@ -396,7 +398,7 @@ function openDay(k){
     <button type="button" data-h="1" aria-pressed="${h}">Heiztag · ${S.settings.heatTemp} °C</button>
     <button type="button" data-h="0" aria-pressed="${!h}">Frostschutz · ${S.settings.frostTemp} °C</button>
   </div>
-  <div class="two">
+  <div class="two" ${dtl()?'':'hidden'}>
     <label class="f">Verbrauch (kWh)<input type="text" inputmode="decimal" id="fE" value="${vals(r.e)}" placeholder="z. B. 38,5"></label>
     <label class="f">PV-Produktion (kWh)<input type="text" inputmode="decimal" id="fP" value="${vals(r.p)}" placeholder="z. B. 12,0"></label>
   </div>
@@ -798,6 +800,7 @@ function renderDaten(){
     <div class="row" style="margin-top:8px"><button class="btn sm" id="bPaste">Text analysieren</button></div>
     <div id="csvPanel"></div></div>
   <div class="card"><h2>Einstellungen</h2>
+    <label class="f" style="flex-direction:row;align-items:center;gap:10px;margin-bottom:12px"><input type="checkbox" data-daily ${dtl()?'checked':''} style="width:auto"><span>Tages-Details (kWh je Tag) anzeigen<br><small class="muted">Verbrauch und Produktion liegen bisher nur quartalsweise vor.</small></span></label>
     <label class="f" style="margin-bottom:12px">Darstellung<select data-theme-sel><option value="auto"${(s.theme||'auto')==='auto'?' selected':''}>Automatisch (wie Gerät)</option><option value="light"${s.theme==='light'?' selected':''}>Hell</option><option value="dark"${s.theme==='dark'?' selected':''}>Dunkel</option></select></label>
     <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <label class="f">Heiztemperatur (°C)<input type="text" inputmode="decimal" data-s="heatTemp" value="${s.heatTemp}"></label>
@@ -833,6 +836,7 @@ $('#v-daten').addEventListener('click',e=>{
 });
 $('#v-daten').addEventListener('change',e=>{
   const t=e.target;
+  if(t.hasAttribute('data-daily')){S.settings.showDaily=t.checked;save();return}
   if(t.hasAttribute('data-theme-sel')){S.settings.theme=t.value;save();applyTheme();return}
   if(t.dataset.m){ui.csv.map[t.dataset.m]=+t.value;renderCsvPanel();return}
   if(t.dataset.s){let v=toNum(t.value);if(v==null||Number.isNaN(v)){toast('Ungültige Zahl');renderDaten();return}

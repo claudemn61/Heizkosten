@@ -1,5 +1,10 @@
 # Änderungsprotokoll
 
+## 0.04.00 – 24.11.2026
+- Analyse: Durchschnittlicher Verbrauch (Ø je Kalendertag gleitend 12 Monate, Modell kWh je Heiz-/Frostschutztag, kWh je gewichtetem Tag)
+- Heizgradtage aus MeteoSchweiz-Wetterdaten (Station Ulrichen), automatisch geladen; kWh je Heizgradtag pro Quartal
+- Einstellung Heizgrenze; Wetterdaten manuell aktualisierbar
+
 ## 0.03.01 – 24.11.2026
 - Einstellung «Tages-Details (kWh je Tag) anzeigen» (Standard: aus) blendet Details-Modus, Details-Knopf, kWh-Felder und kWh-Kacheln aus oder ein
 

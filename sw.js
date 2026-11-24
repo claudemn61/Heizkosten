@@ -1,5 +1,5 @@
 /* Service Worker – Heizkosten Bellwald. Bei jeder Version CACHE-Namen anpassen. */
-const VERSION = '0.03.01';
+const VERSION = '0.04.00';
 const CACHE = 'hkb-' + VERSION;
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/icon.svg'];
 

@@ -20,12 +20,19 @@
   --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#6250d6;--s8:#e34948;
   --accent:#2a78d6;--onaccent:#fff;--good:#006300;--crit:#d03b3b;
 }
-@media (prefers-color-scheme:dark){:root{
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
   --page:#0d0d0d;--surface:#1a1a19;--tx:#f0efec;--tx2:#c3c2b7;--mut:#898781;
   --grid:#2c2c2a;--axis:#383835;--bd:rgba(255,255,255,.10);--off:#2c2c2a;
   --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#0ca30c;--s7:#9085e9;--s8:#e66767;
   --good:#0ca30c;--crit:#e66767;
 }}
+:root[data-theme=dark]{color-scheme:dark;
+  --page:#0d0d0d;--surface:#1a1a19;--tx:#f0efec;--tx2:#c3c2b7;--mut:#898781;
+  --grid:#2c2c2a;--axis:#383835;--bd:rgba(255,255,255,.10);--off:#2c2c2a;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#0ca30c;--s7:#9085e9;--s8:#e66767;
+  --good:#0ca30c;--crit:#e66767;
+}
+:root[data-theme=light]{color-scheme:light}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 html{background:var(--page)}
@@ -165,8 +172,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='0.02.01', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='0.03.00', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'0.03.00',d:'24.11.2026',t:['Darstellung wählbar: Automatisch, Hell oder Dunkel (Daten → Einstellungen)']},
   {v:'0.02.01',d:'24.11.2026',t:['Automatische Updates: Die App lädt sich bei neuer Version selbst neu (Seite wird immer zuerst vom Server geholt, Cache nur offline)']},
   {v:'0.02.00',d:'24.11.2026',t:['Kalender: Antippen schaltet einen Tag direkt zwischen Heiztag und Frostschutz um (langes Drücken öffnet die Details)',
     'Zeitraum direkt im Kalender markieren: ersten und letzten Tag antippen','Rückgängig-Knopf nach jeder Änderung im Kalender']},
@@ -206,6 +214,9 @@ const defaults=()=>({schema:SCHEMA,settings:DEFAULT_SETTINGS(),days:{},quarters:
 function migrate(o){const d=defaults();return{...d,...o,settings:{...d.settings,...(o.settings||{})},days:o.days||{},quarters:o.quarters||{},meta:{...d.meta,...(o.meta||{})},schema:SCHEMA}}
 function load(){try{const r=localStorage.getItem(LS_KEY);if(r)return migrate(JSON.parse(r))}catch(e){console.warn(e)}return defaults()}
 let S=load();
+function applyTheme(){const t=S.settings.theme||'auto';if(t==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.dataset.theme=t;
+  const m=document.querySelector('meta[name=theme-color]');if(m)m.content=(t==='dark'||(t==='auto'&&matchMedia('(prefers-color-scheme:dark)').matches))?'#0d0d0d':'#2a78d6'}
+applyTheme();
 function save(){S.meta.modified=new Date().toISOString();try{localStorage.setItem(LS_KEY,JSON.stringify(S))}catch(e){toast('Speichern fehlgeschlagen: '+e.message)}}
 function setDay(k,patch){
   const r={...(S.days[k]||{}),...patch};
@@ -787,6 +798,7 @@ function renderDaten(){
     <div class="row" style="margin-top:8px"><button class="btn sm" id="bPaste">Text analysieren</button></div>
     <div id="csvPanel"></div></div>
   <div class="card"><h2>Einstellungen</h2>
+    <label class="f" style="margin-bottom:12px">Darstellung<select data-theme-sel><option value="auto"${(s.theme||'auto')==='auto'?' selected':''}>Automatisch (wie Gerät)</option><option value="light"${s.theme==='light'?' selected':''}>Hell</option><option value="dark"${s.theme==='dark'?' selected':''}>Dunkel</option></select></label>
     <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <label class="f">Heiztemperatur (°C)<input type="text" inputmode="decimal" data-s="heatTemp" value="${s.heatTemp}"></label>
       <label class="f">Frostschutz (°C)<input type="text" inputmode="decimal" data-s="frostTemp" value="${s.frostTemp}"></label>
@@ -821,6 +833,7 @@ $('#v-daten').addEventListener('click',e=>{
 });
 $('#v-daten').addEventListener('change',e=>{
   const t=e.target;
+  if(t.hasAttribute('data-theme-sel')){S.settings.theme=t.value;save();applyTheme();return}
   if(t.dataset.m){ui.csv.map[t.dataset.m]=+t.value;renderCsvPanel();return}
   if(t.dataset.s){let v=toNum(t.value);if(v==null||Number.isNaN(v)){toast('Ungültige Zahl');renderDaten();return}
     if(t.dataset.s==='frostFactor')v=Math.max(0,Math.min(1,v/100));S.settings[t.dataset.s]=v;save();renderDaten();return}

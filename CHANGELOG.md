@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 0.03.00 – 24.11.2026
+- Darstellung wählbar: Automatisch, Hell oder Dunkel (Daten → Einstellungen)
+
 ## 0.02.01 – 24.11.2026
 - Automatische Updates: Seite wird zuerst vom Server geladen (Cache nur offline), App lädt sich bei neuer Version selbst neu
 

@@ -165,8 +165,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='0.02.00', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='0.02.01', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'0.02.01',d:'24.11.2026',t:['Automatische Updates: Die App lädt sich bei neuer Version selbst neu (Seite wird immer zuerst vom Server geholt, Cache nur offline)']},
   {v:'0.02.00',d:'24.11.2026',t:['Kalender: Antippen schaltet einen Tag direkt zwischen Heiztag und Frostschutz um (langes Drücken öffnet die Details)',
     'Zeitraum direkt im Kalender markieren: ersten und letzten Tag antippen','Rückgängig-Knopf nach jeder Änderung im Kalender']},
   {v:'0.01.00',d:'24.11.2026',t:['Erste Version: Tageserfassung (Heiztag / Frostschutz) mit Feldern für Verbrauch und PV-Produktion (kWh)',
@@ -836,7 +837,14 @@ $('#fileJson').addEventListener('change',async e=>{
 $('#fileCsv').addEventListener('change',async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;startCsv(await f.text())});
 
 /* ====================== Start ====================== */
-if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator&&location.protocol!=='file:'){
+  const had=!!navigator.serviceWorker.controller;let reloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had&&!reloaded){reloaded=true;location.reload()}});
+  navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>{
+    r.update().catch(()=>{});
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)r.update().catch(()=>{})});
+  }).catch(()=>{});
+}
 if(navigator.storage?.persist)navigator.storage.persist().catch(()=>{});
 window.__hkb={get S(){return S},qInfo,yInfo,forecast,startCsv,applyJson,go,VERSION};
 go('erfassen');

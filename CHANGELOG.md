@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 0.02.01 – 24.11.2026
+- Automatische Updates: Seite wird zuerst vom Server geladen (Cache nur offline), App lädt sich bei neuer Version selbst neu
+
 ## 0.02.00 – 24.11.2026
 - Kalender: Antippen schaltet einen Tag direkt zwischen Heiztag und Frostschutz um (langes Drücken öffnet die Details)
 - Zeitraum direkt im Kalender markieren: ersten und letzten Tag antippen

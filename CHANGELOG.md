@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 0.04.01 – 25.11.2026
+- Kalender: Frostschutztage mit Tagesmittel unter Frostschutz-Temperatur (Heizung läuft vermutlich) orange markiert; Monatskachel «Frost heizt vermutl.»
+
 ## 0.04.00 – 24.11.2026
 - Analyse: Durchschnittlicher Verbrauch (Ø je Kalendertag gleitend 12 Monate, Modell kWh je Heiz-/Frostschutztag, kWh je gewichtetem Tag)
 - Heizgradtage aus MeteoSchweiz-Wetterdaten (Station Ulrichen), automatisch geladen; kWh je Heizgradtag pro Quartal

@@ -77,6 +77,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .cal .wd{text-align:center;font-size:12px;color:var(--mut);padding:2px 0}
 .cal button,.cal span.void{aspect-ratio:1/1;border-radius:10px;border:1px solid var(--bd);background:var(--page);position:relative;padding:0;cursor:pointer;font-size:15px}
 .cal span.void{border:0;background:none}
+.cal button.fz{background:color-mix(in srgb,var(--s2) 24%,var(--page));border-color:color-mix(in srgb,var(--s2) 60%,var(--page))}
 .cal button.on{background:var(--s1);color:#fff;border-color:transparent;font-weight:600}
 .cal button.fut.on{background:color-mix(in srgb,var(--s1) 30%,var(--page));color:var(--tx);border:1.5px dashed var(--s1)}
 .cal button{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
@@ -172,8 +173,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='0.04.00', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='0.04.01', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'0.04.01',d:'25.11.2026',t:['Kalender: Frostschutztage, an denen das Tagesmittel unter der Frostschutz-Temperatur liegt (Heizung läuft vermutlich), sind orange markiert; Kachel «Frost heizt vermutl.» pro Monat']},
   {v:'0.04.00',d:'24.11.2026',t:['Analyse: Durchschnittlicher Verbrauch – Ø je Kalendertag (gleitend 12 Monate), Modell kWh je Heiz- bzw. Frostschutztag, kWh je gewichtetem Tag','Heizgradtage aus MeteoSchweiz-Wetterdaten (Station Ulrichen), automatisch geladen; kWh je Heizgradtag pro Quartal','Neue Einstellung: Heizgrenze für Heizgradtage; Wetterdaten manuell aktualisierbar']},
   {v:'0.03.01',d:'24.11.2026',t:['Einstellung «Tages-Details (kWh je Tag) anzeigen» (standardmässig aus): blendet Details-Modus, Details-Knopf, kWh-Felder und kWh-Kacheln im Erfassen-Tab ein oder aus']},
   {v:'0.03.00',d:'24.11.2026',t:['Darstellung wählbar: Automatisch, Hell oder Dunkel (Daten → Einstellungen)']},
@@ -376,14 +378,16 @@ function calTap(k){
 }
 function stateLabel(h){return h?`Heiztag · ${S.settings.heatTemp} °C`:`Frostschutz · ${S.settings.frostTemp} °C`}
 function renderErfassen(){
+  if(!ui.wxTry&&wxAge()>20&&navigator.onLine!==false){ui.wxTry=true;wxFetch().then(()=>{if(ui.tab==='erfassen')renderErfassen()}).catch(e=>console.warn('Wetter',e))}
   const el=$('#v-erfassen'),t=todayKey(),{y,m}=ui.month,th=isHeated(t);
   const first=(new Date(Date.UTC(y,m,1)).getUTCDay()+6)%7;
   let cells=WD.map(w=>`<div class="wd">${w}</div>`).join('')+'<span class="void"></span>'.repeat(first);
-  let nH=0,eS=0,pS=0,eN=0,pN=0;
+  let nH=0,eS=0,pS=0,eN=0,pN=0,nFz=0;const hasWx=Object.keys(WX.t).length>0;
   for(let d=1;d<=dim(y,m);d++){
     const k=key(y,m,d),r=S.days[k],on=r?.h===1; if(on)nH++;
+    const fz=!on&&WX.t[k]!=null&&WX.t[k]<S.settings.frostTemp;if(fz)nFz++;
     if(r?.e!=null){eS+=r.e;eN++} if(r?.p!=null){pS+=r.p;pN++}
-    cells+=`<button type="button" data-k="${k}" class="${on?'on':''} ${k>t?'fut':''} ${k===t?'today':''} ${k===ui.rangeStart?'rs':''}" aria-label="${fmtDate(k)}, ${on?'Heiztag':'Frostschutz'}${k>t?' (geplant)':''}">${d}${(r&&(r.e!=null||r.p!=null||r.n))?'<i></i>':''}</button>`;
+    cells+=`<button type="button" data-k="${k}" class="${on?'on':''} ${fz?'fz':''} ${k>t?'fut':''} ${k===t?'today':''} ${k===ui.rangeStart?'rs':''}" aria-label="${fmtDate(k)}, ${on?'Heiztag':fz?'Frostschutz, heizt vermutlich':'Frostschutz'}${k>t?' (geplant)':''}">${d}${(r&&(r.e!=null||r.p!=null||r.n))?'<i></i>':''}</button>`;
   }
   const tp=parseKey(t);
   el.innerHTML=`
@@ -411,10 +415,11 @@ function renderErfassen(){
     ${mode()==='range'?`<div class="seg frost" role="group" aria-label="Zustand für den Zeitraum" style="margin-bottom:8px"><button type="button" data-rh="1" aria-pressed="${ui.rangeH===1}">Heiztage</button><button type="button" data-rh="0" data-h="0" aria-pressed="${ui.rangeH===0}">Frostschutz</button></div>`:''}
     <p class="small muted" style="margin:0 0 10px">${mode()==='toggle'?'Tag antippen: Heiztag ⇄ Frostschutz. Lang drücken: Details'+(dtl()?' und kWh':'')+'.':mode()==='range'?(ui.rangeStart?`Start ${fmtDate(ui.rangeStart)} – jetzt den letzten Tag antippen (gleicher Tag = nur dieser Tag).`:'Ersten Tag des Zeitraums antippen, dann den letzten.'):'Tag antippen: Details, kWh und Notiz öffnen.'}</p>
     <div class="cal">${cells}</div>
-    <div class="legendrow"><span><i style="background:var(--s1)"></i>Heiztag</span><span><i style="background:color-mix(in srgb,var(--s1) 30%,var(--page));outline:1px dashed var(--s1)"></i>geplant</span><span><i style="background:var(--page);border:1px solid var(--bd)"></i>Frostschutz</span><span><i style="background:var(--s2);border-radius:50%"></i>kWh/Notiz erfasst</span></div>
+    <div class="legendrow"><span><i style="background:var(--s1)"></i>Heiztag</span><span><i style="background:color-mix(in srgb,var(--s1) 30%,var(--page));outline:1px dashed var(--s1)"></i>geplant</span><span><i style="background:var(--page);border:1px solid var(--bd)"></i>Frostschutz</span>${hasWx?`<span><i style="background:color-mix(in srgb,var(--s2) 24%,var(--page));border:1px solid color-mix(in srgb,var(--s2) 60%,var(--page))"></i>Frostschutz heizt vermutlich (Tagesmittel &lt; ${S.settings.frostTemp} °C)</span>`:''}<span><i style="background:var(--s2);border-radius:50%"></i>kWh/Notiz erfasst</span></div>
     <hr>
     <div class="tiles">
       <div class="tile"><div class="l">Heiztage ${MON[m]}</div><div class="v">${nH}</div></div>
+      ${hasWx?`<div class="tile"><div class="l">Frost heizt vermutl.</div><div class="v">${nFz}</div></div>`:''}
       ${dtl()?`<div class="tile"><div class="l">Verbrauch</div><div class="v">${eN?kwhF(eS):'–'}</div></div>
       <div class="tile"><div class="l">PV-Produktion</div><div class="v">${pN?kwhF(pS):'–'}</div></div>`:''}
     </div>

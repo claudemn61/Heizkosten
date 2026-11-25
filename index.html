@@ -174,8 +174,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='0.05.00', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='1.0.0', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'1.0.0',d:'25.11.2026',t:['Erste stabile Version: Heiztage erfassen, Quartalskosten und kWh, Analysen, Heizgradtage und Wetterdaten, Darstellung Hell/Dunkel']},
   {v:'0.05.00',d:'25.11.2026',t:['Heiztage (21 °C) jetzt rot statt blau – passt zu den orangen Frostschutztagen mit Heizbetrieb','Neue Einstellung: Frostschutz heizt bei Tagesmittel unter … °C; die App zeigt die Schwelle mit der besten Übereinstimmung zu den kWh und übernimmt sie auf Wunsch']},
   {v:'0.04.02',d:'25.11.2026',t:['Analyse: Modell rechnet mit Frostschutztagen mit Heizbetrieb (Tagesmittel unter Frostschutz-Temperatur) statt mit allen Frostschutztagen; neue Spalte «Frost aktiv» in der Quartalstabelle']},
   {v:'0.04.01',d:'25.11.2026',t:['Kalender: Frostschutztage, an denen das Tagesmittel unter der Frostschutz-Temperatur liegt (Heizung läuft vermutlich), sind orange markiert; Kachel «Frost heizt vermutl.» pro Monat']},

@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 1.0.0 – 25.11.2026
+- Erste stabile Version (Funktionsumfang wie 0.05.00)
+
 ## 0.05.00 – 25.11.2026
 - Heiztage (21 °C) rot statt blau
 - Einstellung «Frostschutz heizt bei Tagesmittel unter … °C» mit Vorschlag der besten Schwelle

@@ -18,19 +18,19 @@
   --page:#f9f9f7;--surface:#fcfcfb;--tx:#0b0b0b;--tx2:#52514e;--mut:#898781;
   --grid:#e1e0d9;--axis:#c3c2b7;--bd:rgba(11,11,11,.10);--off:#e9e8e2;
   --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#6250d6;--s8:#e34948;
-  --accent:#2a78d6;--onaccent:#fff;--good:#006300;--crit:#d03b3b;--heat:#d03b3b;
+  --accent:#2a78d6;--onaccent:#fff;--good:#006300;--crit:#d03b3b;--heat:#c01f1f;--fz:#f0a800;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
   --page:#0d0d0d;--surface:#1a1a19;--tx:#f0efec;--tx2:#c3c2b7;--mut:#898781;
   --grid:#2c2c2a;--axis:#383835;--bd:rgba(255,255,255,.10);--off:#2c2c2a;
   --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#0ca30c;--s7:#9085e9;--s8:#e66767;
-  --good:#0ca30c;--crit:#e66767;--heat:#d84a4a;
+  --good:#0ca30c;--crit:#e66767;--heat:#d42a2a;--fz:#ffb81c;
 }}
 :root[data-theme=dark]{color-scheme:dark;
   --page:#0d0d0d;--surface:#1a1a19;--tx:#f0efec;--tx2:#c3c2b7;--mut:#898781;
   --grid:#2c2c2a;--axis:#383835;--bd:rgba(255,255,255,.10);--off:#2c2c2a;
   --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#0ca30c;--s7:#9085e9;--s8:#e66767;
-  --good:#0ca30c;--crit:#e66767;--heat:#d84a4a;
+  --good:#0ca30c;--crit:#e66767;--heat:#d42a2a;--fz:#ffb81c;
 }
 :root[data-theme=light]{color-scheme:light}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -78,7 +78,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .cal .wd{text-align:center;font-size:12px;color:var(--mut);padding:2px 0}
 .cal button,.cal span.void{aspect-ratio:1/1;border-radius:10px;border:1px solid var(--bd);background:var(--page);position:relative;padding:0;cursor:pointer;font-size:15px}
 .cal span.void{border:0;background:none}
-.cal button.fz{background:color-mix(in srgb,var(--s2) 24%,var(--page));border-color:color-mix(in srgb,var(--s2) 60%,var(--page))}
+.cal button.fz{background:color-mix(in srgb,var(--fz) 42%,var(--page));border-color:var(--fz)}
 .cal button.on{background:var(--heat);color:#fff;border-color:transparent;font-weight:600}
 .cal button.fut.on{background:color-mix(in srgb,var(--heat) 30%,var(--page));color:var(--tx);border:1.5px dashed var(--heat)}
 .cal button{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
@@ -92,7 +92,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .heat .hm{font-size:12px;color:var(--tx2)}
 .heat .hs{font-size:12px;text-align:right;color:var(--tx2);font-variant-numeric:tabular-nums}
 .heat .hc{height:15px;border-radius:3px;border:0;padding:0;background:var(--off);cursor:pointer;min-width:0}
-.heat .hc.fz{background:color-mix(in srgb,var(--s2) 62%,var(--page))}
+.heat .hc.fz{background:var(--fz)}
 .heat .hc.on{background:var(--heat)}
 .heat .hc.fut.on{background:color-mix(in srgb,var(--heat) 35%,var(--page));outline:1px dashed var(--heat);outline-offset:-1px}
 .heat .hc.void{background:none;cursor:default}
@@ -447,7 +447,7 @@ function renderErfassen(){
     ${mode()==='range'?`<div class="seg frost" role="group" aria-label="Zustand für den Zeitraum" style="margin-bottom:8px"><button type="button" data-rh="1" aria-pressed="${ui.rangeH===1}">Heiztage</button><button type="button" data-rh="0" data-h="0" aria-pressed="${ui.rangeH===0}">Frostschutz</button></div>`:''}
     <p class="small muted" style="margin:0 0 10px">${mode()==='toggle'?'Tag antippen: Heiztag ⇄ Frostschutz. Lang drücken: Details'+(dtl()?' und kWh':'')+'.':mode()==='range'?(ui.rangeStart?`Start ${fmtDate(ui.rangeStart)} – jetzt den letzten Tag antippen (gleicher Tag = nur dieser Tag).`:'Ersten Tag des Zeitraums antippen, dann den letzten.'):'Tag antippen: Details, kWh und Notiz öffnen.'}</p>
     <div class="cal">${cells}</div>
-    <div class="legendrow"><span><i style="background:var(--heat)"></i>Heiztag</span><span><i style="background:color-mix(in srgb,var(--heat) 30%,var(--page));outline:1px dashed var(--heat)"></i>geplant</span><span><i style="background:var(--page);border:1px solid var(--bd)"></i>Frostschutz</span>${hasWx?`<span><i style="background:color-mix(in srgb,var(--s2) 24%,var(--page));border:1px solid color-mix(in srgb,var(--s2) 60%,var(--page))"></i>Frostschutz heizt vermutlich (Tagesmittel &lt; ${nf(frostRun(),1)} °C)</span>`:''}<span><i style="background:var(--s2);border-radius:50%"></i>kWh/Notiz erfasst</span></div>
+    <div class="legendrow"><span><i style="background:var(--heat)"></i>Heiztag</span><span><i style="background:color-mix(in srgb,var(--heat) 30%,var(--page));outline:1px dashed var(--heat)"></i>geplant</span><span><i style="background:var(--page);border:1px solid var(--bd)"></i>Frostschutz</span>${hasWx?`<span><i style="background:color-mix(in srgb,var(--fz) 42%,var(--page));border:1px solid var(--fz)"></i>Frostschutz heizt vermutlich (Tagesmittel &lt; ${nf(frostRun(),1)} °C)</span>`:''}<span><i style="background:var(--s2);border-radius:50%"></i>kWh/Notiz erfasst</span></div>
     <hr>
     <div class="tiles">
       <div class="tile"><div class="l">Heiztage ${MON[m]}</div><div class="v">${nH}</div></div>
@@ -559,7 +559,7 @@ function renderJahr(){
   }
   el.innerHTML=`${ysel('jy',y)}
   <div class="card"><h2>Heiztage ${y}</h2><div class="heat">${grid}</div>
-    <div class="legendrow"><span><i style="background:var(--heat)"></i>Heiztag</span><span><i style="background:var(--off)"></i>Frostschutz</span>${hasWx?`<span><i style="background:color-mix(in srgb,var(--s2) 62%,var(--page))"></i>Frostschutz heizt vermutlich</span>`:''}<span><i style="background:color-mix(in srgb,var(--heat) 35%,var(--page));outline:1px dashed var(--heat)"></i>geplant</span></div>
+    <div class="legendrow"><span><i style="background:var(--heat)"></i>Heiztag</span><span><i style="background:var(--off)"></i>Frostschutz</span>${hasWx?`<span><i style="background:var(--fz)"></i>Frostschutz heizt vermutlich</span>`:''}<span><i style="background:color-mix(in srgb,var(--heat) 35%,var(--page));outline:1px dashed var(--heat)"></i>geplant</span></div>
     <p class="small muted" style="margin-bottom:0">Tag antippen zum Bearbeiten. Zeilenende: Heiztage im Monat.</p></div>
   <div class="tiles">
     <div class="tile"><div class="l">Heiztage</div><div class="v">${yi.d21}</div></div>

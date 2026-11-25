@@ -828,9 +828,9 @@ function renderJahr(){
     grid+=cols.map(c=>`<span class="hs${g}">${c==='d'?mc[m]:c==='kwh'?pv(pe?.kwh,pe?.noKwh):pv(pe?.chf,pe?.noChf)}</span>`).join('');
   }
   el.innerHTML=`${ysel('jy',y)}
-  <div class="card"><div class="cardhd"><h2>Heiztage ${y}</h2><button type="button" class="btn sm" data-colmenu aria-label="Spalten rechts wählen" aria-expanded="${!!ui.colmenu}">☰</button>${ui.colmenu?`<div class="colmenu" role="group" aria-label="Spalten rechts">${COLS.map(c=>`<label><input type="checkbox" data-col="${c}" ${cols.includes(c)?'checked':''}>${{d:'Heiztage (Σ)',kwh:'kWh (geschätzt)',chf:'CHF (geschätzt)'}[c]}</label>`).join('')}</div>`:''}</div><div class="heat" style="grid-template-columns:2.4rem repeat(31,minmax(0,1fr))${cols.map(c=>c==='d'?' 2.4rem':' 3rem').join('')}">${grid}</div>
+  <div class="card"><div class="cardhd"><h2>Heiztage ${y}</h2>${ui.colmenu?`<div class="colmenu" role="group" aria-label="Spalten rechts">${COLS.map(c=>`<label><input type="checkbox" data-col="${c}" ${cols.includes(c)?'checked':''}>${{d:'Heiztage (Σ)',kwh:'kWh (geschätzt)',chf:'CHF (geschätzt)'}[c]}</label>`).join('')}</div>`:''}</div><div class="heat" style="grid-template-columns:2.4rem repeat(31,minmax(0,1fr))${cols.map(c=>c==='d'?' 2.4rem':' 3rem').join('')}">${grid}</div>
     <div class="legendrow"><span><i style="background:var(--heat)"></i>Heiztag</span><span><i style="background:var(--off)"></i>Frostschutz</span>${hasWx?`<span><i style="background:var(--fz)"></i>Frostschutz heizt vermutlich</span>`:''}<span><i style="background:color-mix(in srgb,var(--heat) 35%,var(--page));outline:1px dashed var(--heat)"></i>geplant</span>${hasWx?`<span class="tsw" role="group" aria-label="Angezeigte Temperaturen"><button type="button" data-tsw="bw" class="${tal?'':'on'}">Bellwald</button><button type="button" data-tsw="tal" class="${tal?'on':''}">Geschinen</button></span>`:''}</div>
-    <p class="small muted" style="margin-bottom:0">Tag antippen zum Bearbeiten. Spalten rechts (☰ oben): Heiztage, kWh und CHF je Monat – kWh und CHF sind Schätzungen des Modells.</p></div>
+    <p class="small muted" style="margin-bottom:0">Tag antippen zum Bearbeiten. Spalten rechts (Überschrift antippen): Heiztage, kWh und CHF je Monat – kWh und CHF sind Schätzungen des Modells.</p></div>
   <div class="tiles">
     <div class="tile"><div class="l">Heiztage</div><div class="v">${yi.d21}</div></div>
     <div class="tile"><div class="l">Frostschutztage</div><div class="v">${yi.d8}</div></div>
@@ -873,7 +873,7 @@ $('#v-jahr').addEventListener('click',e=>{
 });
 
 $('#v-jahr').addEventListener('change',e=>{const t=e.target;
-  if(t.dataset.col){const cur=new Set(S.settings.jahrCols||['d']);t.checked?cur.add(t.dataset.col):cur.delete(t.dataset.col);S.settings.jahrCols=['d','kwh','chf'].filter(c=>cur.has(c));save();renderJahr();return}
+  if(t.dataset.col){const cur=new Set(S.settings.jahrCols||['d']);t.checked?cur.add(t.dataset.col):cur.delete(t.dataset.col);if(!cur.size){cur.add(t.dataset.col);toast('Mindestens eine Spalte bleibt sichtbar')}S.settings.jahrCols=['d','kwh','chf'].filter(c=>cur.has(c));save();renderJahr();return}
  if(!t.dataset.pz||!/^\d{4}-\d\d-\d\d$/.test(t.value))return;ui[t.dataset.pz]=t.value;renderJahr()});
 
 /* ====================== Tab: Kosten ====================== */

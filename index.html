@@ -210,7 +210,7 @@ const CHANGELOG=[
 const MONTHS=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const WD=['Mo','Di','Mi','Do','Fr','Sa','So'], WDL=['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'];
-const DEFAULT_SETTINGS=()=>({heatTemp:21,frostTemp:8,thresholdTemp:15,tapMode:'toggle',hgtLimit:15});
+const DEFAULT_SETTINGS=()=>({heatTemp:21,frostTemp:8,thresholdTemp:15,tapMode:'toggle',hgtLimit:15,tcA:-0.35,tcB:-0.55});
 
 /* ====================== Helfer ====================== */
 const $=(s,r=document)=>r.querySelector(s);
@@ -257,9 +257,9 @@ const isHeated=k=>S.days[k]?.h===1;
    Kosten werden im Verhältnis der Heizgradtage auf Heiz-/Frostschutztage verteilt. */
 const _dq=new Map();let _cn=null;
 function climNormals(){
-  const ck=(WX.at||'')+'|'+Object.keys(WX.t).length;if(_cn&&_cn.k===ck)return _cn.m;
+  const ck=(WX.at||'')+'|'+Object.keys(WX.t).length+'|'+(S.settings.tcA??-0.35)+'|'+(S.settings.tcB??-0.55);if(_cn&&_cn.k===ck)return _cn.m;
   const sum={},cnt={};
-  for(const k in WX.t){const md=k.slice(5);sum[md]=(sum[md]||0)+WX.t[k];cnt[md]=(cnt[md]||0)+1}
+  for(const k in WX.t){const md=k.slice(5);sum[md]=(sum[md]||0)+tcT(WX.t[k]);cnt[md]=(cnt[md]||0)+1}
   const mds=[];for(let m=0;m<12;m++)for(let d=1;d<=dim(2024,m);d++)mds.push(`${pad(m+1)}-${pad(d)}`);
   const n=mds.length,raw=mds.map(md=>cnt[md]?sum[md]/cnt[md]:null),m={};
   mds.forEach((md,i)=>{let s=0,c=0;for(let j=-3;j<=3;j++){const v=raw[(i+j+n)%n];if(v!=null){s+=v;c++}}if(c)m[md]=s/c});
@@ -271,7 +271,7 @@ function qDemand(y,q){
   if(Object.keys(WX.t).length){
     const s=S.settings,m0=(q-1)*3,cn=climNormals();let h21=0,h8=0,nA=0,nN=0,days=0;
     for(let m=m0;m<m0+3;m++)for(let d=1;d<=dim(y,m);d++){
-      days++;const k=key(y,m,d);let T=WX.t[k];
+      days++;const k=key(y,m,d);let T=wxT(k);
       if(T==null){T=cn[k.slice(5)];if(T==null)continue;nN++}else nA++;
       const on=isHeated(k);
       if(on)h21+=T<(s.hgtLimit??15)?Math.max(0,s.heatTemp-T):0;else h8+=Math.max(0,s.frostTemp-T)}
@@ -348,17 +348,23 @@ async function wxFetch(){
   WX={st:WX_STATION,t,at:new Date().toISOString()};wxSave();return Object.keys(t).length;
 }
 const wxAge=()=>WX.at?(Date.now()-new Date(WX.at))/36e5:Infinity;
+/* Temperaturkorrektur Ulrichen → Bellwald (Zer Tanne): Bellwald = T + clamp(a + b·T, −1.5, +4).
+   Bei kaltem Talboden (Inversion) ist Bellwald wärmer, bei milder Witterung kälter. a/b in den Einstellungen. */
+const TC_MIN=-1.5,TC_MAX=4;
+function tcCorr(T,st=S.settings){const a=st.tcA??-0.35,b=st.tcB??-0.55;return Math.max(TC_MIN,Math.min(TC_MAX,a+b*T))}
+const tcT=(T,st)=>T+tcCorr(T,st);
+const wxT=k=>{const T=WX.t[k];return T==null?null:tcT(T)};
 const wxLast=()=>{const ks=Object.keys(WX.t);return ks.length?ks.reduce((a,b)=>a>b?a:b):null};
 /* Heizgradtage je Tagesstatus: Heiztag → (Heiztemp − Tmittel) nur unter der Heizgrenze, Frostschutz → (Frosttemp − Tmittel) */
 const frostRun=()=>S.settings.frostRun??S.settings.frostTemp;
 function hgtDay(k){
-  const T=WX.t[k];if(T==null)return null;const s=S.settings;
+  const T=wxT(k);if(T==null)return null;const s=S.settings;
   if(isHeated(k))return T<(s.hgtLimit??15)?Math.max(0,s.heatTemp-T):0;
   return Math.max(0,s.frostTemp-T);
 }
 function qHgt(x,thr=frostRun()){
   let h21=0,h8=0,n=0,n8a=0;const a=parseKey(x.start);
-  for(let m=a.m;m<a.m+3;m++)for(let d=1;d<=dim(x.y,m);d++){const k=key(x.y,m,d),v=hgtDay(k);if(v==null)continue;n++;if(isHeated(k))h21+=v;else{h8+=v;if(WX.t[k]<thr)n8a++}}
+  for(let m=a.m;m<a.m+3;m++)for(let d=1;d<=dim(x.y,m);d++){const k=key(x.y,m,d),v=hgtDay(k);if(v==null)continue;n++;if(isHeated(k))h21+=v;else{h8+=v;if(wxT(k)<thr)n8a++}}
   if(n<x.days*0.9)return null;const f=x.days/n;
   return{h21:h21*f,h8:h8*f,h:(h21+h8)*f,n,n8a:n8a*f};
 }
@@ -439,7 +445,7 @@ function renderErfassen(){
   let nH=0,eS=0,pS=0,eN=0,pN=0,nFz=0;const hasWx=Object.keys(WX.t).length>0;
   for(let d=1;d<=dim(y,m);d++){
     const k=key(y,m,d),r=S.days[k],on=r?.h===1; if(on)nH++;
-    const fz=!on&&WX.t[k]!=null&&WX.t[k]<frostRun();if(fz)nFz++;
+    const fz=!on&&wxT(k)!=null&&wxT(k)<frostRun();if(fz)nFz++;
     if(r?.e!=null){eS+=r.e;eN++} if(r?.p!=null){pS+=r.p;pN++}
     cells+=`<button type="button" data-k="${k}" class="${on?'on':''} ${fz?'fz':''} ${k>t?'fut':''} ${k===t?'today':''} ${k===ui.rangeStart?'rs':''}" aria-label="${fmtDate(k)}, ${on?'Heiztag':fz?'Frostschutz, heizt vermutlich':'Frostschutz'}${k>t?' (geplant)':''}">${d}${(r&&(r.e!=null||r.p!=null||r.n))?'<i></i>':''}</button>`;
   }
@@ -574,8 +580,8 @@ function renderJahr(){
     grid+=`<span class="hm${g}">${MON[m]}</span>`;
     for(let d=1;d<=31;d++){
       if(d>dim(y,m)){grid+=`<span class="hc void${g}"></span>`;continue}
-      const k=key(y,m,d),on=isHeated(k),fz=!on&&WX.t[k]!=null&&WX.t[k]<frostRun();if(fz)nFz++;
-      grid+=`<button class="hc${on?' on':fz?' fz':''}${k>t?' fut':''}${g}" data-k="${k}" aria-label="${fmtDate(k)}, ${on?'Heiztag':fz?'Frostschutz, heizt vermutlich':'Frostschutz'}${WX.t[k]!=null?', '+WX.t[k].toFixed(1)+' °C':''}" title="${WX.t[k]!=null?WX.t[k].toFixed(1)+' °C (Ulrichen)':''}">${WX.t[k]!=null?`<span class="tmp">${String(Math.round(WX.t[k])).replace('-','−')}°</span>`:''}</button>`;
+      const k=key(y,m,d),on=isHeated(k),fz=!on&&wxT(k)!=null&&wxT(k)<frostRun();if(fz)nFz++;
+      grid+=`<button class="hc${on?' on':fz?' fz':''}${k>t?' fut':''}${g}" data-k="${k}" aria-label="${fmtDate(k)}, ${on?'Heiztag':fz?'Frostschutz, heizt vermutlich':'Frostschutz'}${wxT(k)!=null?', '+wxT(k).toFixed(1)+' °C':''}" title="${wxT(k)!=null?wxT(k).toFixed(1)+' °C (Bellwald geschätzt; Ulrichen '+WX.t[k].toFixed(1)+' °C)':''}">${wxT(k)!=null?`<span class="tmp">${String(Math.round(wxT(k))).replace('-','−')}°</span>`:''}</button>`;
     }
     grid+=`<span class="hs${g}">${mc[m]}</span>`;
   }
@@ -796,7 +802,7 @@ function renderAnalyse(){
     </dl>
     <div class="scroll" style="margin-top:10px"><table><thead><tr><th>Quartal</th><th>Heiztage</th><th>Frost aktiv</th><th>kWh</th><th>kWh/Tag</th><th>Heizgradtage</th><th>kWh/HGT</th></tr></thead><tbody>${
       cq.map(x=>`<tr><td>Q${x.q} ${x.y}</td><td>${x.d21}</td><td>${x.hg?nf(x.hg.n8a,0):'–'}</td><td>${nf(x.e,0)}</td><td>${nf(x.perDay,1)}</td><td>${x.hg?nf(x.hg.h,0):'–'}</td><td>${x.hg&&x.hg.h>0?nf(x.e/x.hg.h,2):'–'}</td></tr>`).join('')}</tbody></table></div>
-    <p class="small muted" style="margin:8px 0 0"><b>Ø je Kalendertag</b> über 12 Monate gleicht die Jahreszeit aus. Das <b>Modell</b> schätzt per Ausgleichsrechnung, was ein Heiztag und ein Frostschutztag mit Heizbetrieb (Tagesmittel unter ${nf(frostRun(),1)} °C, im Kalender orange) im Mittel verbrauchen. Frostschutztage ohne Heizbetrieb zählen 0. <b>Frost aktiv</b> = Anzahl dieser Tage im Quartal. <b>Heizgradtage</b>: Heiztag = ${S.settings.heatTemp} − Tagesmittel (nur unter ${S.settings.hgtLimit??15} °C), Frostschutz = ${S.settings.frostTemp} − Tagesmittel; Wetter MeteoSchweiz, Station Ulrichen (1346 m), Stand ${WX.at?new Date(WX.at).toLocaleDateString('de-CH'):'–'}. Bellwald liegt höher – Werte sind eine Näherung.</p></div>
+    <p class="small muted" style="margin:8px 0 0"><b>Ø je Kalendertag</b> über 12 Monate gleicht die Jahreszeit aus. Das <b>Modell</b> schätzt per Ausgleichsrechnung, was ein Heiztag und ein Frostschutztag mit Heizbetrieb (Tagesmittel unter ${nf(frostRun(),1)} °C, im Kalender orange) im Mittel verbrauchen. Frostschutztage ohne Heizbetrieb zählen 0. <b>Frost aktiv</b> = Anzahl dieser Tage im Quartal. <b>Heizgradtage</b>: Heiztag = ${S.settings.heatTemp} − Tagesmittel (nur unter ${S.settings.hgtLimit??15} °C), Frostschutz = ${S.settings.frostTemp} − Tagesmittel; Wetter MeteoSchweiz, Station Ulrichen (1346 m), auf Bellwald umgerechnet (Korrektur in den Einstellungen), Stand ${WX.at?new Date(WX.at).toLocaleDateString('de-CH'):'–'}. Die Umrechnung auf Bellwald ist eine Näherung.</p></div>
   <div class="card"><h2>Ø Verbrauch je Tag (gleitend 12 Monate)</h2>${r12.length?'<div id="c6"></div>':'<p class="muted">Dafür braucht es vier aufeinanderfolgende abgeschlossene Quartale mit kWh.</p>'}</div>
   <div class="card"><h2>kWh je Heizgradtag</h2>${cqH.length?'<div id="c7"></div><p class="small muted" style="margin-bottom:0">Niedriger = effizienter bzw. weniger Verbrauch bei gleichem Wetter und gleicher Heizart.</p>':'<p class="muted">Noch keine Wetterdaten für die Quartale mit kWh.</p>'}</div>`:'';
   el.innerHTML=`
@@ -956,7 +962,10 @@ function renderDaten(){
       <label class="f">Heiztag ab Solltemp. (°C, Import)<input type="text" inputmode="decimal" data-s="thresholdTemp" value="${s.thresholdTemp}"></label>
       <label class="f">Heizgrenze Aussentemp. (°C, Heizgradtage)<input type="text" inputmode="decimal" data-s="hgtLimit" value="${s.hgtLimit??15}"></label>
       <label class="f">Frostschutz heizt bei Tagesmittel unter (°C)<input type="text" inputmode="decimal" data-s="frostRun" value="${s.frostRun??s.frostTemp}"></label>
+      <label class="f">Korrektur Ulrichen→Bellwald: Grundversatz a (°C)<input type="text" inputmode="decimal" data-s="tcA" value="${s.tcA??-0.35}"></label>
+      <label class="f">Korrektur: Faktor b (°C je °C Talwert)<input type="text" inputmode="decimal" data-s="tcB" value="${s.tcB??-0.55}"></label>
     </div>
+    <p class="small muted" style="margin:8px 0 0">Bellwald ≈ Ulrichen + a + b · T (Korrektur begrenzt auf −1,5 … +4 °C). Bei kaltem Talboden (Inversion) ist Bellwald wärmer, bei milder Witterung kälter. Beispiele mit deinen Werten: ${[5,2,0,-5,-10].map(T=>`Tal ${String(T).replace('-','−')} °C → Bellwald ${nf(tcT(T),1).replace('-','−')} °C`).join(' · ')}. Beide Werte auf 0 setzen = keine Korrektur.</p>
     ${(()=>{const b=bestFrostRun();const cur=frostRun();return b?`<p class="small muted" style="margin:8px 0 0">Beste Übereinstimmung mit euren kWh: <b>${nf(b.t,1)} °C</b> (R² ${nf(b.r2,2)})${b.t===cur?' – bereits eingestellt.':` <button class="btn sm" id="bFrostBest" data-t="${b.t}" style="margin-left:6px">Übernehmen</button>`}</p>`:''})()}
     <h3 style="margin-top:16px">Wetterdaten</h3>
     <p class="small muted" style="margin:0 0 8px">MeteoSchweiz, Station Ulrichen (1346 m), Tagesmittel: ${Object.keys(WX.t).length?Object.keys(WX.t).length+' Tage bis '+fmtDate(wxLast())+' · geladen '+new Date(WX.at).toLocaleDateString('de-CH'):'noch nicht geladen'}. Wird beim Öffnen der Analyse automatisch aktualisiert.</p>

@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 1.2.2 – 25.11.2026
+- Jahr: Spaltenwahl um «Ø Temperatur (°C)» je Monat ergänzt (ganz rechts; folgt der Wahl Bellwald/Geschinen)
+
 ## 1.2.1 – 25.11.2026
 - Jahr: rechts neben der Heiztage-Summe optional Summe kWh und CHF je Monat (geschätzt); Auswahl über das Listen-Symbol oben rechts in der Karte
 

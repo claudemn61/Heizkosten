@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 1.0.1 – 25.11.2026
+- Heizbedarf je Monat wird automatisch aus den Wetterdaten abgeleitet (abschaltbar)
+
 ## 1.0.0 – 25.11.2026
 - Erste stabile Version (Funktionsumfang wie 0.05.00)
 

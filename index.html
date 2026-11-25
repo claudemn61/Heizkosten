@@ -174,8 +174,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='1.0.0', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='1.0.1', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'1.0.1',d:'25.11.2026',t:['Heizbedarf je Monat wird automatisch aus den Wetterdaten abgeleitet (abschaltbar, dann gelten die eigenen Werte)']},
   {v:'1.0.0',d:'25.11.2026',t:['Erste stabile Version: Heiztage erfassen, Quartalskosten und kWh, Analysen, Heizgradtage und Wetterdaten, Darstellung Hell/Dunkel']},
   {v:'0.05.00',d:'25.11.2026',t:['Heiztage (21 °C) jetzt rot statt blau – passt zu den orangen Frostschutztagen mit Heizbetrieb','Neue Einstellung: Frostschutz heizt bei Tagesmittel unter … °C; die App zeigt die Schwelle mit der besten Übereinstimmung zu den kWh und übernimmt sie auf Wunsch']},
   {v:'0.04.02',d:'25.11.2026',t:['Analyse: Modell rechnet mit Frostschutztagen mit Heizbetrieb (Tagesmittel unter Frostschutz-Temperatur) statt mit allen Frostschutztagen; neue Spalte «Frost aktiv» in der Quartalstabelle']},
@@ -240,7 +241,7 @@ const isHeated=k=>S.days[k]?.h===1;
    Gewichtete Tage = Heiztage*Gew + Frosttage*Gew*Frostfaktor
    Kosten werden im Verhältnis der gewichteten Tage auf Heiz-/Frostschutztage verteilt. */
 function qInfo(y,q){
-  const m0=(q-1)*3, F=S.settings.monthFactors, ff=S.settings.frostFactor;
+  const m0=(q-1)*3, F=MF(), ff=S.settings.frostFactor;
   let days=0,d21=0,eD=0,pD=0,eN=0,pN=0;
   for(let m=m0;m<m0+3;m++)for(let d=1;d<=dim(y,m);d++){
     const k=key(y,m,d);days++;const r=S.days[k];
@@ -310,6 +311,22 @@ async function wxFetch(){
 const wxAge=()=>WX.at?(Date.now()-new Date(WX.at))/36e5:Infinity;
 const wxLast=()=>{const ks=Object.keys(WX.t);return ks.length?ks.reduce((a,b)=>a>b?a:b):null};
 /* Heizgradtage je Tagesstatus: Heiztag → (Heiztemp − Tmittel) nur unter der Heizgrenze, Frostschutz → (Frosttemp − Tmittel) */
+/* Monatsgewichte: automatisch aus Wetterdaten (mittlerer Heizbedarf je Kalendermonat, höchster Monat = 100 %) oder von Hand */
+let _mfc=null;
+function autoMonthFactors(){
+  const s=S.settings,ck=[WX.at,Object.keys(WX.t).length,s.heatTemp,s.hgtLimit,todayKey().slice(0,7)].join('|');
+  if(_mfc&&_mfc.k===ck)return _mfc.v;
+  const acc=Array.from({length:12},()=>[]),cur=todayKey().slice(0,7);
+  const ym=new Map();
+  for(const k in WX.t){const ky=k.slice(0,7);if(ky>=cur)continue;const T=WX.t[k];
+    const dmd=T<(s.hgtLimit??15)?Math.max(0,s.heatTemp-T):0;const e=ym.get(ky)||{n:0,s:0};e.n++;e.s+=dmd;ym.set(ky,e)}
+  ym.forEach((e,ky)=>{const y=+ky.slice(0,4),m=+ky.slice(5,7)-1;if(e.n>=dim(y,m)*0.9)acc[m].push(e.s/e.n)});
+  let v=null;
+  if(acc.every(a=>a.length>=1)){const mm=acc.map(a=>mean(a)),mx=Math.max(...mm);if(mx>0)v=mm.map(x=>Math.max(0.02,x/mx))}
+  _mfc={k:ck,v};return v;
+}
+const autoMF=()=>S.settings.autoFactors!==false;
+const MF=()=>(autoMF()&&autoMonthFactors())||S.settings.monthFactors;
 const frostRun=()=>S.settings.frostRun??S.settings.frostTemp;
 function hgtDay(k){
   const T=WX.t[k];if(T==null)return null;const s=S.settings;
@@ -918,8 +935,10 @@ function renderDaten(){
     <p class="small muted" style="margin:0 0 8px">MeteoSchweiz, Station Ulrichen (1346 m), Tagesmittel: ${Object.keys(WX.t).length?Object.keys(WX.t).length+' Tage bis '+fmtDate(wxLast())+' · geladen '+new Date(WX.at).toLocaleDateString('de-CH'):'noch nicht geladen'}. Wird beim Öffnen der Analyse automatisch aktualisiert.</p>
     <div class="row"><button class="btn sm" id="bWx">Wetterdaten jetzt laden</button></div>
     <h3 style="margin-top:16px">Heizbedarf je Monat (%)</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));gap:8px">${s.monthFactors.map((f,i)=>`<label class="f" style="margin:0">${MON[i]}<input type="text" inputmode="decimal" data-mf="${i}" value="${Math.round(f*1000)/10}"></label>`).join('')}</div>
-    <p class="small muted" style="margin-bottom:0">Die Monatswerte bestimmen die Gewichtung der Quartale im Kostenmodell.</p></div>
+    ${(()=>{const auto=autoMF(),av=autoMonthFactors(),on=auto&&!!av,F=MF();return `
+    <label class="f" style="flex-direction:row;align-items:center;gap:10px;margin-bottom:10px"><input type="checkbox" data-autof ${auto?'checked':''} style="width:auto"><span>Automatisch aus Wetterdaten ableiten<br><small class="muted">${auto?(av?'Mittlerer Heizbedarf je Monat laut Ulrichen-Daten (kältester Monat = 100 %).':'Noch nicht möglich – es braucht Wetterdaten für alle 12 Monate; bis dahin gelten die eigenen Werte.'):'Eigene Werte (von Hand).'}</small></span></label>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));gap:8px">${F.map((f,i)=>`<label class="f" style="margin:0">${MON[i]}<input type="text" inputmode="decimal" data-mf="${i}" value="${Math.round(f*1000)/10}" ${on?'disabled':''}></label>`).join('')}</div>`})()}
+    <p class="small muted" style="margin-bottom:0">Die Monatswerte bestimmen die Gewichtung der Quartale im Kostenmodell und in der Prognose.</p></div>
   <div class="card"><h2>Info</h2>
     <dl class="kv"><dt>Version</dt><dd>${VERSION}</dd><dt>Speicher</dt><dd id="persist">…</dd></dl>
     <details class="how" style="margin-top:10px"><summary>Änderungsprotokoll</summary>${CHANGELOG.map(c=>`<p><b>${c.v}</b> · ${c.d}<br>${c.t.map(esc).join('<br>')}</p>`).join('')}</details>
@@ -947,6 +966,7 @@ $('#v-daten').addEventListener('click',e=>{
 });
 $('#v-daten').addEventListener('change',e=>{
   const t=e.target;
+  if(t.hasAttribute('data-autof')){S.settings.autoFactors=t.checked;save();renderDaten();return}
   if(t.hasAttribute('data-daily')){S.settings.showDaily=t.checked;save();return}
   if(t.hasAttribute('data-theme-sel')){S.settings.theme=t.value;save();applyTheme();return}
   if(t.dataset.m){ui.csv.map[t.dataset.m]=+t.value;renderCsvPanel();return}

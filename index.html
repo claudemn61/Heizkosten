@@ -89,6 +89,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 /* Jahres-Heatmap */
 .heat{display:grid;grid-template-columns:2.4rem repeat(31,minmax(0,1fr)) 2.4rem;gap:2px;align-items:center}
 .heat .hh{font-size:10px;color:var(--mut);text-align:center;overflow:visible;white-space:nowrap}
+.heat button.hh{background:none;border:0;padding:3px 0;font:inherit;font-size:10px;color:var(--tx2);cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
 .heat .hm{font-size:12px;color:var(--tx2)}
 .heat .hs{font-size:12px;text-align:right;color:var(--tx2);font-variant-numeric:tabular-nums}
 .heat .hc .tmp{display:none;pointer-events:none;color:#000;font-size:9px;font-weight:400;line-height:1}
@@ -813,7 +814,7 @@ function renderJahr(){
   const tal=S.settings.jahrTemp==='tal',dT=k=>tal?(WX.t[k]??null):wxT(k),dName=tal?'Tal (Ulrichen ≈ Geschinen)':'Bellwald geschätzt';
   const el=$('#v-jahr'),y=ui.jy,t=todayKey(),yi=yInfo(y);
   const COLS=['d','kwh','chf'],COLN={d:'Σ',kwh:'kWh',chf:'CHF'},cols=COLS.filter(c=>(S.settings.jahrCols||['d']).includes(c));
-  let grid='<span></span>'+Array.from({length:31},(_,i)=>`<span class="hh">${[1,5,10,15,20,25,30].includes(i+1)?i+1:''}</span>`).join('')+cols.map(c=>`<span class="hh">${COLN[c]}</span>`).join('');
+  let grid='<span></span>'+Array.from({length:31},(_,i)=>`<span class="hh">${[1,5,10,15,20,25,30].includes(i+1)?i+1:''}</span>`).join('')+cols.map(c=>`<button type="button" class="hh" data-colmenu aria-label="Spalten rechts wählen">${COLN[c]}</button>`).join('');
   const mc=monthCounts(y);
   for(let m=0;m<12;m++){
     const g=[3,6,9].includes(m)?' gap':'';

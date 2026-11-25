@@ -1,5 +1,10 @@
 # Änderungsprotokoll
 
+## 1.1.0 – 25.11.2026
+- Jahr: neue Karte «Zeitraum» – für beliebige Daten (oder Jahr, Quartal, Monat, 12 Monate) Heiztage, Frostschutztage, Heizgradtage sowie geschätzte kWh und Kosten, getrennt nach Schätzung/Prognose
+- Tag-Dialog: Schätzung für den Tag (Heizgradtage, kWh, CHF)
+- Temperaturkorrektur Ulrichen → Bellwald (Einstellungen a/b); Umschalter Bellwald/Geschinen in der Jahresansicht
+
 ## 1.0.2 – 25.11.2026
 - Monatswerte und Frostfaktor entfernt: Kostenmodell und Prognose rechnen direkt mit Heizgradtagen; künftige Tage mit Klimamittel der Vorjahre
 - «CHF je gewichtetem Tag» heisst jetzt «CHF je Heizgradtag»

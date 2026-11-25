@@ -192,8 +192,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='1.0.2', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='1.1.0', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'1.1.0',d:'25.11.2026',t:['Jahr: neue Karte «Zeitraum» – für beliebige Daten (oder Jahr, Quartal, Monat, 12 Monate) Heiztage, Frostschutztage, Heizgradtage sowie geschätzte kWh und Kosten, getrennt nach Schätzung/Prognose','Tag-Dialog: Schätzung für den Tag (Heizgradtage, kWh, CHF)','Temperaturkorrektur Ulrichen → Bellwald (Einstellungen), Umschalter Bellwald/Geschinen in der Jahresansicht']},
   {v:'1.0.2',d:'25.11.2026',t:['Monatswerte (Heizbedarf je Monat) und Frostfaktor entfernt: Kostenmodell und Prognose rechnen direkt mit Heizgradtagen aus den Wetterdaten; künftige Tage mit Klimamittel der Vorjahre','«CHF je gewichtetem Tag» heisst jetzt «CHF je Heizgradtag»']},
   {v:'1.0.1',d:'25.11.2026',t:['Heizbedarf je Monat wird automatisch aus den Wetterdaten abgeleitet (abschaltbar, dann gelten die eigenen Werte)']},
   {v:'1.0.0',d:'25.11.2026',t:['Erste stabile Version: Heiztage erfassen, Quartalskosten und kWh, Analysen, Heizgradtage und Wetterdaten, Darstellung Hell/Dunkel']},
@@ -244,7 +245,7 @@ let S=load();
 function applyTheme(){const t=S.settings.theme||'auto';if(t==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.dataset.theme=t;
   const m=document.querySelector('meta[name=theme-color]');if(m)m.content=(t==='dark'||(t==='auto'&&matchMedia('(prefers-color-scheme:dark)').matches))?'#0d0d0d':'#2a78d6'}
 applyTheme();
-function save(){_dq.clear();S.meta.modified=new Date().toISOString();try{localStorage.setItem(LS_KEY,JSON.stringify(S))}catch(e){toast('Speichern fehlgeschlagen: '+e.message)}}
+function save(){_dq.clear();_cal.clear();S.meta.modified=new Date().toISOString();try{localStorage.setItem(LS_KEY,JSON.stringify(S))}catch(e){toast('Speichern fehlgeschlagen: '+e.message)}}
 function setDay(k,patch){
   const r={...(S.days[k]||{}),...patch};
   for(const f of['e','p']) if(r[f]==null||r[f]==='') delete r[f];
@@ -258,7 +259,7 @@ const isHeated=k=>S.days[k]?.h===1;
    Gewicht je Tag = Heizgradtage aus den Wetterdaten (Heiztag: Heiztemp − Tagesmittel unter der Heizgrenze,
    Frostschutz: Frosttemp − Tagesmittel). Fehlende (künftige) Tage: Klimamittel derselben Tage aus den Vorjahren.
    Kosten werden im Verhältnis der Heizgradtage auf Heiz-/Frostschutztage verteilt. */
-const _dq=new Map();let _cn=null;
+const _dq=new Map(),_cal=new Map();let _cn=null;
 function climNormals(){
   const ck=(WX.at||'')+'|'+Object.keys(WX.t).length+'|'+(S.settings.tcA??-0.35)+'|'+(S.settings.tcB??-0.55);if(_cn&&_cn.k===ck)return _cn.m;
   const sum={},cnt={};
@@ -332,7 +333,7 @@ function forecast(y,q){
    Quelle: MeteoSchweiz (Open Data, ogd-smn, Tagesmittel 2 m: tre200d0). Nähe: Ulrichen 1346 m. */
 const WX_KEY='hkb.wx.v1', WX_STATION='ulr', WX_BASE='https://data.geo.admin.ch/ch.meteoschweiz.ogd-smn/';
 let WX=(()=>{try{const r=JSON.parse(localStorage.getItem(WX_KEY)||'null');if(r&&r.t)return r}catch(e){}return{st:WX_STATION,t:{},at:null}})();
-const wxSave=()=>{_dq.clear();try{localStorage.setItem(WX_KEY,JSON.stringify(WX))}catch(e){console.warn(e)}};
+const wxSave=()=>{_dq.clear();_cal.clear();try{localStorage.setItem(WX_KEY,JSON.stringify(WX))}catch(e){console.warn(e)}};
 function wxParse(text,minY,out){
   const L=text.split(/\r?\n/);const hd=(L[0]||'').split(';');
   const iD=hd.indexOf('reference_timestamp'),iT=hd.indexOf('tre200d0');if(iD<0||iT<0)return 0;
@@ -370,6 +371,53 @@ function qHgt(x,thr=frostRun()){
   for(let m=a.m;m<a.m+3;m++)for(let d=1;d<=dim(x.y,m);d++){const k=key(x.y,m,d),v=hgtDay(k);if(v==null)continue;n++;if(isHeated(k))h21+=v;else{h8+=v;if(wxT(k)<thr)n8a++}}
   if(n<x.days*0.9)return null;const f=x.days/n;
   return{h21:h21*f,h8:h8*f,h:(h21+h8)*f,n,n8a:n8a*f};
+}
+/* Tages-/Zeitraumschätzung: Heizgradtage des Tages × Kalibrierfaktor des Quartals.
+   Quartale mit Rechnung bzw. kWh: eigener Faktor (CHF/kWh je Heizgradtag) – Quartalssumme stimmt exakt.
+   Sonst: Mittel gleicher Quartale anderer Jahre (sonst aller Quartale) = Prognose. Künftige Tage: Klimamittel. */
+function calib(y,q){
+  const ck=`${y}-${q}|${WX.at}|${todayKey()}`;if(_cal.has(ck))return _cal.get(ck);
+  const td=todayKey(),m=x=>({c:x.u!=null&&x.u>0?x.u:null,e:(x.e>0&&x.end<td&&x.wt>0)?x.e/x.wt:null});
+  const o=m(qInfo(y,q)),res={uC:o.c,uE:o.e,eC:o.c==null,eE:o.e==null};
+  if(o.c==null||o.e==null){
+    const refs=yearRange().filter(yy=>yy!==y).map(yy=>m(qInfo(yy,q)));let all=null;
+    const pick=f=>{const v=refs.map(f).filter(z=>z!=null);if(v.length)return mean(v);
+      if(!all){all=[];yearRange().forEach(yy=>[1,2,3,4].forEach(qq=>all.push(m(qInfo(yy,qq)))))}
+      const w=all.map(f).filter(z=>z!=null);return w.length?mean(w):null};
+    if(o.c==null)res.uC=pick(z=>z.c);
+    if(o.e==null)res.uE=pick(z=>z.e);
+  }
+  _cal.set(ck,res);return res;
+}
+function dayEst(k){
+  if(!Object.keys(WX.t).length)return null;
+  let T=wxT(k),tEst=false;
+  if(T==null){T=climNormals()[k.slice(5)];if(T==null)return null;tEst=true}
+  const st=S.settings,heated=isHeated(k);
+  const v=heated?(T<(st.hgtLimit??15)?Math.max(0,st.heatTemp-T):0):Math.max(0,st.frostTemp-T);
+  const p=parseKey(k),c=calib(p.y,Math.floor(p.m/3)+1);
+  return{k,T,v,heated,frost:!heated&&T<frostRun(),tEst,
+    kwh:c.uE!=null?v*c.uE:null,chf:c.uC!=null?v*c.uC:null,estK:tEst||c.eE,estC:tEst||c.eC};
+}
+function periodEst(a,b){
+  const r={days:0,heated:0,frost:0,fa:0,hgt:0,kwh:0,chf:0,kwhEst:0,chfEst:0,nT:0,noWx:false,noKwh:false,noChf:false};
+  let k=a,g=0;
+  while(k<=b&&g++<4000){
+    r.days++;if(isHeated(k))r.heated++;else r.frost++;
+    const d=dayEst(k);
+    if(!d)r.noWx=true;
+    else{r.hgt+=d.v;if(d.frost)r.fa++;if(d.tEst)r.nT++;
+      if(d.kwh!=null){r.kwh+=d.kwh;if(d.estK)r.kwhEst+=d.kwh}else r.noKwh=true;
+      if(d.chf!=null){r.chf+=d.chf;if(d.estC)r.chfEst+=d.chf}else r.noChf=true}
+    k=addDays(k,1)}
+  return r;
+}
+function dayEstText(k){
+  const d=dayEst(k);if(!d)return '';
+  const parts=[`${nf(d.v,1)} Heizgradtage`];
+  if(d.kwh!=null)parts.push('≈ '+nf(d.kwh,1)+' kWh');
+  if(d.chf!=null)parts.push('≈ '+chf(d.chf,2));
+  return `<b>Schätzung</b> (Modell, ${d.tEst?'Klimamittel '+nf(d.T,1)+' °C':nf(d.T,1)+' °C Bellwald'}${(d.estK||d.estC)?', Prognose':''}): ${parts.join(' · ')}`.replace(/-(\d)/g,'−$1');
 }
 /* Auswertung Verbrauch: nur abgeschlossene Quartale mit kWh */
 function consQuarters(){
@@ -527,6 +575,7 @@ function openDay(k){
     <button type="button" data-h="1" aria-pressed="${h}">Heiztag · ${S.settings.heatTemp} °C</button>
     <button type="button" data-h="0" aria-pressed="${!h}">Frostschutz · ${S.settings.frostTemp} °C</button>
   </div>
+  <p class="small muted" id="dEst" style="margin:8px 0 10px">${dayEstText(k)}</p>
   <div class="two" ${dtl()?'':'hidden'}>
     <label class="f">Verbrauch (kWh)<input type="text" inputmode="decimal" id="fE" value="${vals(r.e)}" placeholder="z. B. 38,5"></label>
     <label class="f">PV-Produktion (kWh)<input type="text" inputmode="decimal" id="fP" value="${vals(r.p)}" placeholder="z. B. 12,0"></label>
@@ -540,7 +589,7 @@ $('#sheetBody').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;const sh=$('#sheetBody'),k=sh.dataset.k;
   if(b.hasAttribute('data-close')) return closeSheet();
   if(b.dataset.nav){commitDayFields();return openDay(addDays(k,+b.dataset.nav))}
-  if(b.dataset.h!=null&&k&&!sh.dataset.range){commitDayFields();setDay(k,{h:+b.dataset.h});save();$$('.seg [data-h]',sh).forEach(x=>x.setAttribute('aria-pressed',x===b));refresh();return}
+  if(b.dataset.h!=null&&k&&!sh.dataset.range){commitDayFields();setDay(k,{h:+b.dataset.h});save();$$('.seg [data-h]',sh).forEach(x=>x.setAttribute('aria-pressed',x===b));const de=$('#dEst');if(de)de.innerHTML=dayEstText(k);refresh();return}
   if(b.hasAttribute('data-clear')){delete S.days[k];save();toast('Tag geleert');openDay(k);refresh()}
   if(sh.dataset.range){
     if(b.dataset.h!=null){$$('.seg [data-h]',sh).forEach(x=>x.setAttribute('aria-pressed',x===b));sh.dataset.hv=b.dataset.h}
@@ -599,14 +648,39 @@ function renderJahr(){
     ${hasWx?`<div class="tile"><div class="l">Frost heizt vermutl.</div><div class="v">${nFz}</div></div>`:''}
     <div class="tile"><div class="l">Anteil Heiztage</div><div class="v">${pct(yi.d21/yi.days,0)}</div></div>
     <div class="tile"><div class="l">Kosten ${yi.nC<4&&yi.nC>0?`(${yi.nC} Quartale)`:''}</div><div class="v">${yi.chf!=null?chf(yi.chf,0):'–'}</div></div>
-  </div>`;
+  </div>
+  ${pzCard(y,hasWx)}`;
+}
+function pzCard(y,hasWx){
+  if(!ui.pf||!ui.pt){ui.pf=key(y,0,1);ui.pt=key(y,11,31)}
+  const bad=ui.pf>ui.pt,r=hasWx&&!bad?periodEst(ui.pf,ui.pt):null,td=todayKey();
+  const tile=(l,v)=>`<div class="tile"><div class="l">${l}</div><div class="v">${v}</div></div>`;
+  const tiles=r?(r.noWx&&!r.days?'':`<div class="tiles" style="margin-top:12px">
+    ${tile('Tage',r.days)}${tile('Heiztage',r.heated)}${tile('Frostschutztage',r.frost)}${tile('Frost heizt vermutl.',r.fa)}${tile('Heizgradtage',nf(r.hgt,0))}
+    ${tile('kWh (geschätzt)',r.noKwh&&!r.kwh?'–':nf(r.kwh,0))}${tile('Kosten (geschätzt)',r.noChf&&!r.chf?'–':chf(r.chf,0))}</div>
+    <p class="small muted" style="margin:10px 0 0">${r.kwhEst>0||r.chfEst>0?`Davon Prognose: ${nf(r.kwhEst,0)} kWh, ${chf(r.chfEst,0)} (künftige Tage mit Klimamittel; Quartale ohne Rechnung oder kWh mit dem Mittel gleicher Quartale anderer Jahre). `:'Alle Werte aus gemessenen Quartalen, Quartalssummen stimmen mit euren Angaben. '}${r.nT?`${r.nT} Tage ohne Messwert (Klimamittel). `:''}${r.noKwh||r.noChf?'Für einen Teil fehlen Vergleichsquartale, deshalb ist die Summe unvollständig. ':''}Schätzung des Modells; ein einzelner Tag kann deutlich abweichen, Summen über Wochen und Monate sind verlässlicher.</p>`):'';
+  const chip=(id,l)=>`<button type="button" class="btn sm" data-pq="${id}">${l}</button>`;
+  return `<div class="card"><h2>Zeitraum</h2>
+    <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <label class="f">Von<input type="date" data-pz="pf" value="${ui.pf}"></label>
+      <label class="f">Bis<input type="date" data-pz="pt" value="${ui.pt}"></label></div>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:8px">${chip('year','Jahr '+y)}${chip('q','Aktuelles Quartal')}${chip('m','Aktueller Monat')}${chip('back','12 Monate zurück')}${chip('fwd','12 Monate voraus')}</div>
+    ${bad?'<div class="note warn" style="margin-top:10px">«Von» liegt nach «Bis».</div>':''}
+    ${!hasWx?'<div class="note warn" style="margin-top:10px">Für die Schätzung braucht die App Wetterdaten (Daten → Einstellungen → «Wetterdaten jetzt laden»).</div>':''}
+    ${tiles}</div>`;
 }
 $('#v-jahr').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
-  if(b.dataset.y){ui.jy+=+b.dataset.y;renderJahr()}
+  if(b.dataset.y){ui.jy+=+b.dataset.y;ui.pf=ui.pt=null;renderJahr()}
+  else if(b.dataset.pq){const t=parseKey(todayKey()),y=ui.jy;
+    const R={year:[key(y,0,1),key(y,11,31)],q:[key(t.y,Math.floor(t.m/3)*3,1),key(t.y,Math.floor(t.m/3)*3+2,dim(t.y,Math.floor(t.m/3)*3+2))],
+      m:[key(t.y,t.m,1),key(t.y,t.m,dim(t.y,t.m))],back:[addDays(todayKey(),-364),todayKey()],fwd:[todayKey(),addDays(todayKey(),364)]}[b.dataset.pq];
+    if(R){[ui.pf,ui.pt]=R;renderJahr()}}
   else if(b.dataset.tsw){S.settings.jahrTemp=b.dataset.tsw;save();renderJahr()}
   else if(b.dataset.k)openDay(b.dataset.k);
 });
+
+$('#v-jahr').addEventListener('change',e=>{const t=e.target;if(!t.dataset.pz||!/^\d{4}-\d\d-\d\d$/.test(t.value))return;ui[t.dataset.pz]=t.value;renderJahr()});
 
 /* ====================== Tab: Kosten ====================== */
 function qCard(x){

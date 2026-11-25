@@ -100,6 +100,13 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .heat .hc.fut.on{background:color-mix(in srgb,var(--heat) 35%,var(--page));outline:1px dashed var(--heat);outline-offset:-1px}
 .heat .hc.void{background:none;cursor:default}
 .heat .gap{margin-top:7px}
+.fold>summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;-webkit-tap-highlight-color:transparent}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary h2{margin:0}
+.fold>summary::after{content:'';width:8px;height:8px;border-right:2px solid var(--tx2);border-bottom:2px solid var(--tx2);transform:rotate(45deg);margin:0 4px 4px 0;transition:transform .15s}
+.fold[open]>summary::after{transform:rotate(-135deg);margin:4px 4px 0 0}
+.fold[open]>summary{margin-bottom:10px}
+.dccard{padding:14px 10px}
 .cardhd{display:flex;align-items:center;justify-content:space-between;position:relative;margin-bottom:8px}
 .cardhd h2{margin:0}
 .colmenu{position:absolute;right:0;top:100%;z-index:6;background:var(--surface);border:1px solid var(--bd);border-radius:12px;padding:6px 14px;box-shadow:0 6px 20px rgba(0,0,0,.18);min-width:220px}
@@ -165,7 +172,7 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
   .view>.card{margin-bottom:0}
   #v-erfassen{grid-template-columns:minmax(300px,1fr) minmax(0,1.5fr)}
   #v-jahr>*,#v-kosten>*{grid-column:1/-1}
-  #v-analyse>.card:nth-child(-n+2){grid-column:1/-1}
+  #v-analyse>.dccard,#v-analyse>.fold[data-fold=jv],#v-analyse>.fold[data-fold=avg]{grid-column:1/-1}
   .heat .hc{height:22px}
   .cal button,.cal span.void{aspect-ratio:1.4/1}
 }
@@ -880,6 +887,7 @@ $('#v-jahr').addEventListener('change',e=>{const t=e.target;
   if(t.dataset.col){const cur=new Set(S.settings.jahrCols||['d']);t.checked?cur.add(t.dataset.col):cur.delete(t.dataset.col);if(!cur.size){cur.add(t.dataset.col);toast('Mindestens eine Spalte bleibt sichtbar')}S.settings.jahrCols=['d','g','kwh','chf','t'].filter(c=>cur.has(c));save();renderJahr();return}
  if(!t.dataset.pz||!/^\d{4}-\d\d-\d\d$/.test(t.value))return;ui[t.dataset.pz]=t.value;renderJahr()});
 
+$('#v-analyse').addEventListener('toggle',e=>{const t=e.target;if(t.dataset&&t.dataset.fold){(ui.fold=ui.fold||{})[t.dataset.fold]=t.open}},true);
 $('#v-analyse').addEventListener('change',e=>{const t=e.target,k=t.dataset.dc;if(!k)return;
   const d=ui.dc||(ui.dc=dcLoad());d[k]=t.value;
   if(k==='x'){d.r='auto';if(!dcOK(d.x,d.y))d.y='kwh'}
@@ -1118,15 +1126,19 @@ function dcValue(Y,x,bk){
     return{v:yInfo(bk.y).u??null,est:false}}
   return{v:null,est};
 }
+function fold(id,title,body,open){
+  ui.fold=ui.fold||{};
+  return `<details class="card fold" data-fold="${id}"${(ui.fold[id]??!!open)?' open':''}><summary><h2>${title}</h2></summary><div class="foldbody">${body}</div></details>`;
+}
 function dcCard(){
   const d=ui.dc||(ui.dc=dcLoad()),ro=dcRangeOpts(d.x),rv=ro?(ro.some(o=>o[0]===d.r)?d.r:'auto'):'auto';
   const o=(val,txt,cur,dis)=>`<option value="${val}"${val===cur?' selected':''}${dis?' disabled':''}>${txt}</option>`;
-  return `<div class="card"><h2>Grafik nach Wahl</h2>
+  return `<div class="card dccard"><h2>Grafik nach Wahl</h2>
     <div class="grid2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0 12px">
     <label class="f">X-Achse<select data-dc="x">${Object.entries(DC_X).map(([k,t])=>o(k,t,d.x)).join('')}</select></label>
     <label class="f">Y-Achse<select data-dc="y">${Object.entries(DC_Y).map(([k,t])=>o(k,t,d.y,!dcOK(d.x,k))).join('')}</select></label>
     ${ro?`<label class="f">Zeitraum<select data-dc="r">${ro.map(([k,t])=>o(k,t,rv)).join('')}</select></label>`:''}</div>
-    <div id="cdc" style="margin-top:8px"></div><p class="small muted" id="dcNote" style="margin:6px 0 0"></p></div>`;
+    <div id="cdc" style="margin:8px -6px 0"></div><p class="small muted" id="dcNote" style="margin:6px 0 0"></p></div>`;
 }
 function dcMount(){
   const host=$('#cdc');if(!host)return;
@@ -1138,7 +1150,7 @@ function dcMount(){
   const est=vals.map(z=>z.est),anyEst=real.some(z=>z.est);
   if(!real.length){host.innerHTML='<p class="muted">Für diese Auswahl liegen keine Daten vor'+((Y==='kwh'||Y==='perday'||Y==='chf'||Y==='hgt')&&!Object.keys(WX.t).length?' (Wetterdaten fehlen)':'')+'.</p>';$('#dcNote').textContent='';return}
   mountChart(host,{type:d.x==='d'?'lines':'columns',cats:bks.map(b=>b.cat),catTitle:i=>bks[i].title+(est[i]&&vals[i].v!=null?' · geschätzt':''),
-    series:[{name:DC_Y[Y],color:'var(--s1)',values:vals.map(z=>z.v)}],fmt,yTick:tick,yw:46,est,title:DC_X[d.x]+': '+DC_Y[Y]});
+    series:[{name:DC_Y[Y],color:'var(--s1)',values:vals.map(z=>z.v)}],fmt,yTick:tick,yw:46,est,h:innerWidth>=700?340:270,title:DC_X[d.x]+': '+DC_Y[Y]});
   const notes={perday:'Quartal/Jahr: Verbrauch ÷ Kalendertage; Tag/Monat aus dem Modell.',kwh:'Quartal/Jahr: erfasster Verbrauch, sonst Schätzung. Tag/Monat: Modell – der Quartalsverbrauch wird nach Heizgradtagen verteilt, Grundlast ohne Heizung erscheint dort nicht einzeln.',d:'Heiztage = Tage auf 21 °C (inkl. geplanter).',hgt:'Aus den Wetterdaten (Bellwald umgerechnet); künftige Tage mit Klimamittel.',chf:'Quartal/Jahr: abgerechnete Kosten, wo vorhanden; sonst Modellschätzung. Tag/Monat sind immer Schätzungen (Heizgradtage × Preis je Heizgradtag).',pv:'Nur pro Quartal/Jahr erfasst. Jahr: Summe der erfassten Quartale.',u:'Nur für abgerechnete Quartale; Jahr = Kosten ÷ Heizgradtage der abgerechneten Quartale.'};
   $('#dcNote').innerHTML=[notes[Y],anyEst&&d.x!=='d'?'Hell dargestellt = geschätzt bzw. unvollständig (Modell/Prognose).':'',d.x==='d'&&anyEst?'Tage ohne Messwert (z. B. nach heute): Klimamittel bzw. Prognose.':''].filter(Boolean).join(' ');
 }
@@ -1159,7 +1171,7 @@ function renderAnalyse(){
   const mH=fit2(cqH,x=>x.hg.h21,x=>x.hg.h8,x=>x.e);
   const kH=cqH.length?sum(cqH,x=>x.e)/sum(cqH,x=>x.hg.h):null;
   const last12=r12.length?r12[r12.length-1]:null;
-  const avgCard=cq.length?`<div class="card"><h2>Durchschnittlicher Verbrauch</h2>
+  const avgCard=cq.length?fold('avg','Durchschnittlicher Verbrauch',`
     <dl class="kv">
       <dt>Ø je Kalendertag, letzte 12 Monate</dt><dd>${last12?nf(last12.perDay,1)+' kWh <span class="muted small">(bis Q'+last12.x.q+' '+last12.x.y+')</span>':'– <span class="muted small">(4 aufeinanderfolgende Quartale nötig)</span>'}</dd>
       <dt>Heiztag / ${mDays} (Modell)</dt><dd>${mA?nf(mA.a,1)+' kWh / '+nf(mA.b,1)+' kWh <span class="muted small">('+nf(mA.b/mA.a*100,0)+' % eines Heiztags · R² '+nf(mA.r2,2)+' · '+mA.n+' Quartale)</span>':'–'}</dd>
@@ -1167,19 +1179,20 @@ function renderAnalyse(){
     </dl>
     <div class="scroll" style="margin-top:10px"><table><thead><tr><th>Quartal</th><th>Heiztage</th><th>Frost aktiv</th><th>kWh</th><th>kWh/Tag</th><th>Heizgradtage</th><th>kWh/HGT</th></tr></thead><tbody>${
       cq.map(x=>`<tr><td>Q${x.q} ${x.y}</td><td>${x.d21}</td><td>${x.hg?nf(x.hg.n8a,0):'–'}</td><td>${nf(x.e,0)}</td><td>${nf(x.perDay,1)}</td><td>${x.hg?nf(x.hg.h,0):'–'}</td><td>${x.hg&&x.hg.h>0?nf(x.e/x.hg.h,2):'–'}</td></tr>`).join('')}</tbody></table></div>
-    <p class="small muted" style="margin:8px 0 0"><b>Ø je Kalendertag</b> über 12 Monate gleicht die Jahreszeit aus. Das <b>Modell</b> schätzt per Ausgleichsrechnung, was ein Heiztag und ein Frostschutztag mit Heizbetrieb (Tagesmittel unter ${nf(frostRun(),1)} °C, im Kalender orange) im Mittel verbrauchen. Frostschutztage ohne Heizbetrieb zählen 0. <b>Frost aktiv</b> = Anzahl dieser Tage im Quartal. <b>Heizgradtage</b>: Heiztag = ${S.settings.heatTemp} − Tagesmittel (nur unter ${S.settings.hgtLimit??15} °C), Frostschutz = ${S.settings.frostTemp} − Tagesmittel; Wetter MeteoSchweiz, Station Ulrichen (1346 m), auf Bellwald umgerechnet (Korrektur in den Einstellungen), Stand ${WX.at?new Date(WX.at).toLocaleDateString('de-CH'):'–'}. Die Umrechnung auf Bellwald ist eine Näherung.</p></div>
-  <div class="card"><h2>Ø Verbrauch je Tag (gleitend 12 Monate)</h2>${r12.length?'<div id="c6"></div>':'<p class="muted">Dafür braucht es vier aufeinanderfolgende abgeschlossene Quartale mit kWh.</p>'}</div>
-  <div class="card"><h2>kWh je Heizgradtag</h2>${cqH.length?'<div id="c7"></div><p class="small muted" style="margin-bottom:0">Niedriger = effizienter bzw. weniger Verbrauch bei gleichem Wetter und gleicher Heizart.</p>':'<p class="muted">Noch keine Wetterdaten für die Quartale mit kWh.</p>'}</div>`:'';
+    <p class="small muted" style="margin:8px 0 0"><b>Ø je Kalendertag</b> über 12 Monate gleicht die Jahreszeit aus. Das <b>Modell</b> schätzt per Ausgleichsrechnung, was ein Heiztag und ein Frostschutztag mit Heizbetrieb (Tagesmittel unter ${nf(frostRun(),1)} °C, im Kalender orange) im Mittel verbrauchen. Frostschutztage ohne Heizbetrieb zählen 0. <b>Frost aktiv</b> = Anzahl dieser Tage im Quartal. <b>Heizgradtage</b>: Heiztag = ${S.settings.heatTemp} − Tagesmittel (nur unter ${S.settings.hgtLimit??15} °C), Frostschutz = ${S.settings.frostTemp} − Tagesmittel; Wetter MeteoSchweiz, Station Ulrichen (1346 m), auf Bellwald umgerechnet (Korrektur in den Einstellungen), Stand ${WX.at?new Date(WX.at).toLocaleDateString('de-CH'):'–'}. Die Umrechnung auf Bellwald ist eine Näherung.</p>`,true):'';
+  const avgCh=cq.length?fold('c6','Ø Verbrauch je Tag (gleitend 12 Monate)',r12.length?'<div id="c6"></div>':'<p class="muted">Dafür braucht es vier aufeinanderfolgende abgeschlossene Quartale mit kWh.</p>')+fold('c7','kWh je Heizgradtag',cqH.length?'<div id="c7"></div><p class="small muted" style="margin-bottom:0">Niedriger = effizienter bzw. weniger Verbrauch bei gleichem Wetter und gleicher Heizart.</p>':'<p class="muted">Noch keine Wetterdaten für die Quartale mit kWh.</p>'):'';
+  const prog=fcs.length?`<div class="card"><h2>Prognose ${now}</h2>${fcs.map(f=>`<p style="margin:4px 0">Q${f.cur.q}: ca. <b>${chf(f.est,0)}</b> <span class="muted small">(${chf(f.lo,0)} – ${chf(f.hi,0)})</span></p>`).join('')}<p class="small muted" style="margin-bottom:0">Schätzung aus den erwarteten Heizgradtagen und dem ø Preis je Heizgradtag desselben Quartals der Vorjahre. Geplante Heiztage (künftig) fliessen ein.</p></div>`:'';
   el.innerHTML=`
-  <div class="card"><h2>Jahresvergleich</h2>${kpi}</div>
-  ${avgCard}
   ${dcCard()}
-  <div class="card"><h2>Heiztage pro Jahr</h2><div id="c1"></div></div>
-  <div class="card"><h2>Heiztage pro Monat</h2><div id="c2"></div></div>
-  <div class="card"><h2>Stromkosten pro Quartal</h2><div id="c3"></div><p class="small muted" style="margin-bottom:0">Negative Balken: Gutschrift aus PV-Einspeisung.</p></div>
-  <div class="card"><h2>Verbrauch und PV-Produktion pro Quartal</h2>${qWithKwh.length?'<div id="c4"></div>':'<p class="muted">Noch keine kWh-Daten erfasst.</p>'}</div>
-  <div class="card"><h2>CHF je Heizgradtag</h2><div id="c5"></div><p class="small muted" style="margin-bottom:0">Kostenniveau pro Heizgradtag, also bereinigt um Wetter, Jahreszeit und Frostschutztage – zeigt Tarif- und Verbrauchsentwicklung. Q3 ist ausgeblendet, weil PV-Gutschriften den Wert dort verzerren (Legende antippen zum Einblenden).</p></div>
-  ${fcs.length?`<div class="card"><h2>Prognose ${now}</h2>${fcs.map(f=>`<p style="margin:4px 0">Q${f.cur.q}: ca. <b>${chf(f.est,0)}</b> <span class="muted small">(${chf(f.lo,0)} – ${chf(f.hi,0)})</span></p>`).join('')}<p class="small muted" style="margin-bottom:0">Schätzung aus den erwarteten Heizgradtagen und dem ø Preis je Heizgradtag desselben Quartals der Vorjahre. Geplante Heiztage (künftig) fliessen ein.</p></div>`:''}`;
+  ${fold('jv','Jahresvergleich',kpi,true)}
+  ${avgCard}
+  ${prog}
+  ${avgCh}
+  ${fold('c1','Heiztage pro Jahr','<div id="c1"></div>')}
+  ${fold('c2','Heiztage pro Monat','<div id="c2"></div>')}
+  ${fold('c3','Stromkosten pro Quartal','<div id="c3"></div><p class="small muted" style="margin-bottom:0">Negative Balken: Gutschrift aus PV-Einspeisung.</p>')}
+  ${fold('c4','Verbrauch und PV-Produktion pro Quartal',qWithKwh.length?'<div id="c4"></div>':'<p class="muted">Noch keine kWh-Daten erfasst.</p>')}
+  ${fold('c5','CHF je Heizgradtag','<div id="c5"></div><p class="small muted" style="margin-bottom:0">Kostenniveau pro Heizgradtag, also bereinigt um Wetter, Jahreszeit und Frostschutztage – zeigt Tarif- und Verbrauchsentwicklung. Q3 ist ausgeblendet, weil PV-Gutschriften den Wert dort verzerren (Legende antippen zum Einblenden).</p>')}`;
   dcMount();
   mountChart($('#c1'),{type:'columns',cats:yrs.map(String),series:[{name:'Heiztage',color:'var(--s1)',values:yis.map(x=>x.d21)}],fmt:v=>nf(v,0),labels:true,title:'Heiztage pro Jahr'});
   mountChart($('#c2'),{type:'lines',cats:MON,series:ys.map(y=>({name:String(y),color:yearColor(y),values:monthCounts(y).map((v,m)=>(y===now&&m>new Date().getMonth()&&v===0)?null:v)})),fmt:v=>nf(v,0)+' Tage',yTick:v=>nf(v,0),title:'Heiztage pro Monat'});

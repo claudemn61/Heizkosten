@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 0.04.02 – 25.11.2026
+- Analyse: Modell rechnet mit Frostschutztagen mit Heizbetrieb statt mit allen Frostschutztagen; neue Spalte «Frost aktiv» in der Quartalstabelle
+
 ## 0.04.01 – 25.11.2026
 - Kalender: Frostschutztage mit Tagesmittel unter Frostschutz-Temperatur (Heizung läuft vermutlich) orange markiert; Monatskachel «Frost heizt vermutl.»
 

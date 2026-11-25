@@ -173,8 +173,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='0.04.01', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='0.04.02', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'0.04.02',d:'25.11.2026',t:['Analyse: Modell rechnet mit Frostschutztagen mit Heizbetrieb (Tagesmittel unter Frostschutz-Temperatur) statt mit allen Frostschutztagen; neue Spalte «Frost aktiv» in der Quartalstabelle']},
   {v:'0.04.01',d:'25.11.2026',t:['Kalender: Frostschutztage, an denen das Tagesmittel unter der Frostschutz-Temperatur liegt (Heizung läuft vermutlich), sind orange markiert; Kachel «Frost heizt vermutl.» pro Monat']},
   {v:'0.04.00',d:'24.11.2026',t:['Analyse: Durchschnittlicher Verbrauch – Ø je Kalendertag (gleitend 12 Monate), Modell kWh je Heiz- bzw. Frostschutztag, kWh je gewichtetem Tag','Heizgradtage aus MeteoSchweiz-Wetterdaten (Station Ulrichen), automatisch geladen; kWh je Heizgradtag pro Quartal','Neue Einstellung: Heizgrenze für Heizgradtage; Wetterdaten manuell aktualisierbar']},
   {v:'0.03.01',d:'24.11.2026',t:['Einstellung «Tages-Details (kWh je Tag) anzeigen» (standardmässig aus): blendet Details-Modus, Details-Knopf, kWh-Felder und kWh-Kacheln im Erfassen-Tab ein oder aus']},
@@ -312,10 +313,10 @@ function hgtDay(k){
   return Math.max(0,s.frostTemp-T);
 }
 function qHgt(x){
-  let h21=0,h8=0,n=0;const a=parseKey(x.start);
-  for(let m=a.m;m<a.m+3;m++)for(let d=1;d<=dim(x.y,m);d++){const k=key(x.y,m,d),v=hgtDay(k);if(v==null)continue;n++;if(isHeated(k))h21+=v;else h8+=v}
+  let h21=0,h8=0,n=0,n8a=0;const a=parseKey(x.start);
+  for(let m=a.m;m<a.m+3;m++)for(let d=1;d<=dim(x.y,m);d++){const k=key(x.y,m,d),v=hgtDay(k);if(v==null)continue;n++;if(isHeated(k))h21+=v;else{h8+=v;if(WX.t[k]<S.settings.frostTemp)n8a++}}
   if(n<x.days*0.9)return null;const f=x.days/n;
-  return{h21:h21*f,h8:h8*f,h:(h21+h8)*f,n};
+  return{h21:h21*f,h8:h8*f,h:(h21+h8)*f,n,n8a:n8a*f};
 }
 /* Auswertung Verbrauch: nur abgeschlossene Quartale mit kWh */
 function consQuarters(){
@@ -723,19 +724,21 @@ function renderAnalyse(){
   const qWithKwh=[];yrs.forEach(y=>[1,2,3,4].forEach(q=>{const x=qInfo(y,q);if(x.e!=null||x.p!=null)qWithKwh.push(x)}));
 
   const cq=consQuarters(),r12=rolling12(cq),hasWx=Object.keys(WX.t).length>0;
-  const mA=fit2(cq,x=>x.d21,x=>x.d8,x=>x.e);
-  const cqH=cq.filter(x=>x.hg),mH=fit2(cqH,x=>x.hg.h21,x=>x.hg.h8,x=>x.e);
+  const cqH=cq.filter(x=>x.hg);
+  const mFz=fit2(cqH,x=>x.d21,x=>x.hg.n8a,x=>x.e),mA=mFz||fit2(cq,x=>x.d21,x=>x.d8,x=>x.e);
+  const mDays=mFz?'Frostschutztag mit Heizbetrieb':'Frostschutztag';
+  const mH=fit2(cqH,x=>x.hg.h21,x=>x.hg.h8,x=>x.e);
   const kH=cqH.length?sum(cqH,x=>x.e)/sum(cqH,x=>x.hg.h):null;
   const last12=r12.length?r12[r12.length-1]:null;
   const avgCard=cq.length?`<div class="card"><h2>Durchschnittlicher Verbrauch</h2>
     <dl class="kv">
       <dt>Ø je Kalendertag, letzte 12 Monate</dt><dd>${last12?nf(last12.perDay,1)+' kWh <span class="muted small">(bis Q'+last12.x.q+' '+last12.x.y+')</span>':'– <span class="muted small">(4 aufeinanderfolgende Quartale nötig)</span>'}</dd>
-      <dt>Heiztag / Frostschutztag (Modell)</dt><dd>${mA?nf(mA.a,1)+' kWh / '+nf(mA.b,1)+' kWh <span class="muted small">(Frost = '+nf(mA.b/mA.a*100,0)+' % · R² '+nf(mA.r2,2)+' · '+mA.n+' Quartale)</span>':'–'}</dd>
+      <dt>Heiztag / ${mDays} (Modell)</dt><dd>${mA?nf(mA.a,1)+' kWh / '+nf(mA.b,1)+' kWh <span class="muted small">('+nf(mA.b/mA.a*100,0)+' % eines Heiztags · R² '+nf(mA.r2,2)+' · '+mA.n+' Quartale)</span>':'–'}</dd>
       <dt>je Heizgradtag (Wetter)</dt><dd>${kH?nf(kH,1)+' kWh <span class="muted small">(R² '+(mH?nf(mH.r2,2):'–')+' · '+cqH.length+' Quartale)</span>':(hasWx?'– <span class="muted small">(zu wenig Wetterdaten)</span>':'– <span class="muted small">(Wetterdaten werden geladen …)</span>')}</dd>
     </dl>
-    <div class="scroll" style="margin-top:10px"><table><thead><tr><th>Quartal</th><th>Heiztage</th><th>kWh</th><th>kWh/Tag</th><th>kWh/gew. Tag</th><th>Heizgradtage</th><th>kWh/HGT</th></tr></thead><tbody>${
-      cq.map(x=>`<tr><td>Q${x.q} ${x.y}</td><td>${x.d21}</td><td>${nf(x.e,0)}</td><td>${nf(x.perDay,1)}</td><td>${x.perW!=null?nf(x.perW,1):'–'}</td><td>${x.hg?nf(x.hg.h,0):'–'}</td><td>${x.hg&&x.hg.h>0?nf(x.e/x.hg.h,2):'–'}</td></tr>`).join('')}</tbody></table></div>
-    <p class="small muted" style="margin:8px 0 0"><b>Ø je Kalendertag</b> über 12 Monate gleicht die Jahreszeit aus. Das <b>Modell</b> schätzt per Ausgleichsrechnung, was ein Heiz- bzw. Frostschutztag im Mittel verbraucht; ein «Frost»-Anteil nahe ${nf(S.settings.frostFactor*100,0)} % bestätigt die Annahme in den Einstellungen. <b>Heizgradtage</b>: Heiztag = ${S.settings.heatTemp} − Tagesmittel (nur unter ${S.settings.hgtLimit??15} °C), Frostschutz = ${S.settings.frostTemp} − Tagesmittel; Wetter MeteoSchweiz, Station Ulrichen (1346 m), Stand ${WX.at?new Date(WX.at).toLocaleDateString('de-CH'):'–'}. Bellwald liegt höher – Werte sind eine Näherung.</p></div>
+    <div class="scroll" style="margin-top:10px"><table><thead><tr><th>Quartal</th><th>Heiztage</th><th>Frost aktiv</th><th>kWh</th><th>kWh/Tag</th><th>kWh/gew. Tag</th><th>Heizgradtage</th><th>kWh/HGT</th></tr></thead><tbody>${
+      cq.map(x=>`<tr><td>Q${x.q} ${x.y}</td><td>${x.d21}</td><td>${x.hg?nf(x.hg.n8a,0):'–'}</td><td>${nf(x.e,0)}</td><td>${nf(x.perDay,1)}</td><td>${x.perW!=null?nf(x.perW,1):'–'}</td><td>${x.hg?nf(x.hg.h,0):'–'}</td><td>${x.hg&&x.hg.h>0?nf(x.e/x.hg.h,2):'–'}</td></tr>`).join('')}</tbody></table></div>
+    <p class="small muted" style="margin:8px 0 0"><b>Ø je Kalendertag</b> über 12 Monate gleicht die Jahreszeit aus. Das <b>Modell</b> schätzt per Ausgleichsrechnung, was ein Heiztag und ein Frostschutztag mit Heizbetrieb (Tagesmittel unter ${S.settings.frostTemp} °C, im Kalender orange) im Mittel verbrauchen. Frostschutztage ohne Heizbetrieb zählen 0. <b>Frost aktiv</b> = Anzahl dieser Tage im Quartal. <b>Heizgradtage</b>: Heiztag = ${S.settings.heatTemp} − Tagesmittel (nur unter ${S.settings.hgtLimit??15} °C), Frostschutz = ${S.settings.frostTemp} − Tagesmittel; Wetter MeteoSchweiz, Station Ulrichen (1346 m), Stand ${WX.at?new Date(WX.at).toLocaleDateString('de-CH'):'–'}. Bellwald liegt höher – Werte sind eine Näherung.</p></div>
   <div class="card"><h2>Ø Verbrauch je Tag (gleitend 12 Monate)</h2>${r12.length?'<div id="c6"></div>':'<p class="muted">Dafür braucht es vier aufeinanderfolgende abgeschlossene Quartale mit kWh.</p>'}</div>
   <div class="card"><h2>kWh je Heizgradtag</h2>${cqH.length?'<div id="c7"></div><p class="small muted" style="margin-bottom:0">Niedriger = effizienter bzw. weniger Verbrauch bei gleichem Wetter und gleicher Heizart.</p>':'<p class="muted">Noch keine Wetterdaten für die Quartale mit kWh.</p>'}</div>`:'';
   el.innerHTML=`

@@ -1,5 +1,9 @@
 # Änderungsprotokoll
 
+## 0.05.00 – 25.11.2026
+- Heiztage (21 °C) rot statt blau
+- Einstellung «Frostschutz heizt bei Tagesmittel unter … °C» mit Vorschlag der besten Schwelle
+
 ## 0.04.02 – 25.11.2026
 - Analyse: Modell rechnet mit Frostschutztagen mit Heizbetrieb statt mit allen Frostschutztagen; neue Spalte «Frost aktiv» in der Quartalstabelle
 

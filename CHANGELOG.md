@@ -1,5 +1,10 @@
 # Änderungsprotokoll
 
+## 1.2.0 – 25.11.2026
+- Synchronisierung zwischen Geräten über ein privates GitHub-Repo (Daten → Synchronisierung), Token nur auf dem jeweiligen Gerät
+- Abgleich pro Eintrag (Tag, Quartal, Einstellung) mit Änderungszeitpunkt und Löschmarkern
+- Automatischer Abgleich beim Öffnen und nach Änderungen, Nachschreiben nach Offline-Betrieb, Statusanzeige
+
 ## 1.1.0 – 25.11.2026
 - Jahr: neue Karte «Zeitraum» – für beliebige Daten (oder Jahr, Quartal, Monat, 12 Monate) Heiztage, Frostschutztage, Heizgradtage sowie geschätzte kWh und Kosten, getrennt nach Schätzung/Prognose
 - Tag-Dialog: Schätzung für den Tag (Heizgradtage, kWh, CHF)

@@ -63,7 +63,7 @@ button{font:inherit;color:inherit}
 .seg.frost button[aria-pressed=true]:not([data-h="0"]){background:var(--heat);color:#fff}
 .seg.frost button[aria-pressed=true][data-h="0"]{background:var(--off);color:var(--tx)}
 label.f{display:block;font-size:13px;color:var(--tx2);margin-top:12px}
-input[type=text],input[type=number],input[type=date],select,textarea{font:inherit;width:100%;margin-top:4px;padding:10px;border:1px solid var(--bd);
+input[type=text],input[type=password],input[type=number],input[type=date],select,textarea{font:inherit;width:100%;margin-top:4px;padding:10px;border:1px solid var(--bd);
   border-radius:10px;background:var(--page);color:var(--tx);min-height:44px}
 textarea{resize:vertical}
 input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -192,8 +192,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='1.1.0', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='1.2.0', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'1.2.0',d:'25.11.2026',t:['Synchronisierung zwischen Geräten über ein privates GitHub-Repo (Daten → Synchronisierung): Token und Repo nur auf dem jeweiligen Gerät','Abgleich pro Eintrag (Tag, Quartal, Einstellung) mit Änderungszeitpunkt und Löschmarkern: Änderungen auf verschiedenen Geräten gehen nicht verloren','Automatischer Abgleich beim Öffnen und nach Änderungen, Nachschreiben nach Offline-Betrieb, Statusanzeige']},
   {v:'1.1.0',d:'25.11.2026',t:['Jahr: neue Karte «Zeitraum» – für beliebige Daten (oder Jahr, Quartal, Monat, 12 Monate) Heiztage, Frostschutztage, Heizgradtage sowie geschätzte kWh und Kosten, getrennt nach Schätzung/Prognose','Tag-Dialog: Schätzung für den Tag (Heizgradtage, kWh, CHF)','Temperaturkorrektur Ulrichen → Bellwald (Einstellungen), Umschalter Bellwald/Geschinen in der Jahresansicht']},
   {v:'1.0.2',d:'25.11.2026',t:['Monatswerte (Heizbedarf je Monat) und Frostfaktor entfernt: Kostenmodell und Prognose rechnen direkt mit Heizgradtagen aus den Wetterdaten; künftige Tage mit Klimamittel der Vorjahre','«CHF je gewichtetem Tag» heisst jetzt «CHF je Heizgradtag»']},
   {v:'1.0.1',d:'25.11.2026',t:['Heizbedarf je Monat wird automatisch aus den Wetterdaten abgeleitet (abschaltbar, dann gelten die eigenen Werte)']},
@@ -245,7 +246,186 @@ let S=load();
 function applyTheme(){const t=S.settings.theme||'auto';if(t==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.dataset.theme=t;
   const m=document.querySelector('meta[name=theme-color]');if(m)m.content=(t==='dark'||(t==='auto'&&matchMedia('(prefers-color-scheme:dark)').matches))?'#0d0d0d':'#2a78d6'}
 applyTheme();
-function save(){_dq.clear();_cal.clear();S.meta.modified=new Date().toISOString();try{localStorage.setItem(LS_KEY,JSON.stringify(S))}catch(e){toast('Speichern fehlgeschlagen: '+e.message)}}
+function save(){syncStamp();syLocalSave();syncSchedule()}
+function syLocalSave(){_dq.clear();_cal.clear();S.meta.modified=new Date().toISOString();try{localStorage.setItem(LS_KEY,JSON.stringify(S))}catch(e){toast('Speichern fehlgeschlagen: '+e.message)}}
+
+/* ====================== Synchronisierung (privates GitHub-Repo) ======================
+   Jeder Tag, jedes Quartal und jede gemeinsame Einstellung trägt einen Änderungszeitpunkt (u); Löschungen werden als
+   Marker (meta.del) geführt. Beim Abgleich gewinnt je Eintrag die neuere Änderung. Token und Repo bleiben auf dem Gerät. */
+const SYNC_KEY='hkb.sync.v1',SYNC_SET=['heatTemp','frostTemp','thresholdTemp','hgtLimit','frostRun','tcA','tcB'];
+const sj=v=>JSON.stringify(v);
+const recSig=r=>{const x={...r};delete x.u;return sj(Object.fromEntries(Object.entries(x).sort(([a],[b])=>a<b?-1:1)))};
+function syncIds(){
+  const m={};
+  for(const k in S.days)m['d:'+k]=recSig(S.days[k]);
+  for(const k in S.quarters)m['q:'+k]=recSig(S.quarters[k]);
+  for(const k of SYNC_SET)if(S.settings[k]!==undefined)m['s:'+k]=sj(S.settings[k]);
+  return m;
+}
+function syncStamp(){
+  const M=S.meta,cur=syncIds();
+  if(!M.snap){M.snap=cur;M.st={};M.del={};return}
+  M.st=M.st||{};M.del=M.del||{};const now=Date.now();
+  for(const id in cur)if(M.snap[id]!==cur[id]){
+    const k=id.slice(2);if(id[0]==='d')S.days[k].u=now;else if(id[0]==='q')S.quarters[k].u=now;else M.st[k]=now;
+    M.snap[id]=cur[id];delete M.del[id]}
+  for(const id in M.snap)if(!(id in cur)){M.del[id]=now;delete M.snap[id]}
+}
+function syncDoc(){
+  const M=S.meta,st={};for(const k of SYNC_SET)if(S.settings[k]!==undefined)st[k]={v:S.settings[k],u:M.st?.[k]||0};
+  return{updated:new Date().toISOString(),days:S.days,quarters:S.quarters,settings:st,del:M.del||{}};
+}
+function syStr(d){
+  const blk=o=>'{\n'+Object.keys(o).sort().map(k=>sj(k)+':'+sj(o[k])).join(',\n')+'\n}';
+  return '{\n"app":"heizkosten-bellwald",\n"v":2,\n"updated":'+sj(d.updated)+',\n"days":'+blk(d.days)+',\n"quarters":'+blk(d.quarters)+',\n"settings":'+blk(d.settings)+',\n"del":'+blk(d.del)+'\n}\n';
+}
+/* Remote-Stand in lokalen Stand einarbeiten. Je Eintrag gewinnt die neuere Änderung (bei Gleichstand mit anderem Inhalt: Cloud). */
+function syncMerge(R){
+  const M=S.meta;M.st=M.st||{};M.del=M.del||{};
+  const rd=R.days||{},rq=R.quarters||{},rs=R.settings||{},rdel=R.del||{};
+  const ids=new Set([...Object.keys(syncIds()),...Object.keys(M.del),...Object.keys(rdel)]);
+  Object.keys(rd).forEach(k=>ids.add('d:'+k));Object.keys(rq).forEach(k=>ids.add('q:'+k));
+  Object.keys(rs).forEach(k=>{if(SYNC_SET.includes(k))ids.add('s:'+k)});
+  let changed=false,stale=false;
+  for(const id of ids){
+    const t=id[0],k=id.slice(2);
+    const L=t==='d'?S.days[k]:t==='q'?S.quarters[k]:(S.settings[k]!==undefined?{v:S.settings[k],u:M.st[k]||0}:undefined);
+    const Rr=t==='d'?rd[k]:t==='q'?rq[k]:rs[k];
+    if(!L&&!Rr){if((M.del[id]??-1)>(rdel[id]??-1))stale=true;else if((M.del[id]??-1)<(rdel[id]??-1)){M.del[id]=rdel[id];changed=true}continue}
+    const lt=L?(L.u||0):(M.del[id]??-1),rt=Rr?(Rr.u||0):(rdel[id]??-1);
+    const same=L&&Rr&&(t==='s'?sj(L.v)===sj(Rr.v):recSig(L)===recSig(Rr));
+    const setU=u=>{if(t==='d')S.days[k].u=u;else if(t==='q')S.quarters[k].u=u;else M.st[k]=u};
+    if(same){if(rt>lt){setU(rt);changed=true}else if(lt>rt)stale=true;continue}
+    if(rt>=lt){
+      if(Rr){
+        if(t==='d')S.days[k]={...Rr};else if(t==='q')S.quarters[k]={...Rr};else{S.settings[k]=Rr.v;M.st[k]=Rr.u||0}
+        M.snap[id]=t==='s'?sj(Rr.v):recSig(Rr);delete M.del[id];
+      }else{
+        if(t==='d')delete S.days[k];else if(t==='q')delete S.quarters[k];
+        delete M.snap[id];M.del[id]=rdel[id];
+      }
+      changed=true;
+    }else stale=true;
+  }
+  return{changed,stale};
+}
+function syApplyRemote(R){
+  const M=S.meta;S.days={};S.quarters={};
+  for(const k in R.days||{})S.days[k]={...R.days[k]};
+  for(const k in R.quarters||{})S.quarters[k]={...R.quarters[k]};
+  M.st={};for(const k of SYNC_SET){const e=R.settings?.[k];if(e&&e.v!==undefined){S.settings[k]=e.v;M.st[k]=e.u||0}}
+  M.del={...(R.del||{})};M.snap=syncIds();syLocalSave();
+}
+const SY={cfg:(()=>{try{return JSON.parse(localStorage.getItem(SYNC_KEY)||'{}')}catch{return{}}})(),busy:false,again:false,timer:null,msg:'',kind:'',t:0,choice:null};
+const syncOn=()=>!!(SY.cfg.token&&SY.cfg.repo&&SY.cfg.linked);
+const sySaveCfg=()=>{try{localStorage.setItem(SYNC_KEY,JSON.stringify(SY.cfg))}catch{}};
+const syTime=()=>new Date().toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'});
+function sySay(msg,kind){SY.msg=msg;SY.kind=kind||'';const el=$('#syncstat');if(el){el.textContent=msg;el.dataset.k=SY.kind}}
+const syApi=()=>`https://api.github.com/repos/${SY.cfg.repo}/contents/${SY.cfg.path||'daten.json'}`;
+const syHdr=json=>({Accept:'application/vnd.github+json',Authorization:'Bearer '+SY.cfg.token,...(json?{'Content-Type':'application/json'}:{})});
+const b64enc=t=>{const b=new TextEncoder().encode(t);let o='';for(let i=0;i<b.length;i+=8192)o+=String.fromCharCode(...b.subarray(i,i+8192));return btoa(o)};
+const b64dec=t=>new TextDecoder().decode(Uint8Array.from(atob(t.replace(/\s/g,'')),c=>c.charCodeAt(0)));
+const syAuthErr=()=>Object.assign(new Error('auth'),{auth:true});
+async function syGet(){
+  const r=await fetch(`${syApi()}?_=${Date.now()}`,{headers:syHdr(),cache:'no-store'});
+  if(r.status===404)return{missing:true};
+  if(r.status===401||r.status===403)throw syAuthErr();
+  if(!r.ok)throw new Error('GET '+r.status);
+  const j=await r.json();return{doc:JSON.parse(b64dec(j.content)),sha:j.sha};
+}
+async function syPut(doc,sha){
+  const body={message:'App: Daten abgeglichen',content:b64enc(syStr(doc))};if(sha)body.sha=sha;
+  const r=await fetch(syApi(),{method:'PUT',headers:syHdr(true),body:JSON.stringify(body)});
+  if(r.ok)return'ok';
+  if(r.status===409||r.status===422)return'conflict';
+  if(r.status===401||r.status===403||r.status===404)throw syAuthErr();
+  throw new Error('PUT '+r.status);
+}
+function syErr(e){
+  if(e.auth)return'⚠ Token ungültig, abgelaufen oder ohne Zugriff auf das Repo (Name und Rechte prüfen)';
+  if(navigator.onLine===false||e instanceof TypeError)return'⚠ Offline – Änderungen werden später abgeglichen';
+  return'⚠ Abgleich fehlgeschlagen ('+e.message+')';
+}
+function syRefresh(){
+  if($('#sheet').hidden&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||''))refresh();
+  else toast('Daten von einem anderen Gerät aktualisiert');
+}
+async function syncRun(){
+  if(!syncOn())return;
+  if(SY.busy){SY.again=true;return}
+  SY.busy=true;sySay('Gleiche ab …');let any=false;
+  try{
+    let ok=false;
+    for(let i=0;i<4&&!ok;i++){
+      const g=await syGet();let stale=true;
+      if(g.doc){const m=syncMerge(g.doc);stale=m.stale;if(m.changed){any=true;syLocalSave()}}
+      if(g.doc&&!stale){ok=true;break}
+      ok=(await syPut(syncDoc(),g.sha))==='ok';
+    }
+    SY.cfg.last=new Date().toISOString();sySaveCfg();
+    sySay(ok?'✓ Abgeglichen '+syTime():'⚠ Abgleich unvollständig – wird erneut versucht',ok?'ok':'err');
+    if(any)syRefresh();
+  }catch(e){sySay(syErr(e),'err')}
+  SY.busy=false;SY.t=Date.now();
+  if(SY.again){SY.again=false;syncRun()}
+}
+function syncSchedule(){if(!syncOn())return;clearTimeout(SY.timer);sySay('Änderung wird gespeichert …');SY.timer=setTimeout(syncRun,1500)}
+function syBackup(){
+  try{localStorage.setItem('hkb.backup.'+Date.now(),JSON.stringify(S));
+    Object.keys(localStorage).filter(k=>k.startsWith('hkb.backup.')).sort().slice(0,-3).forEach(k=>localStorage.removeItem(k))}catch{}
+}
+async function syncConnect(repo,token){
+  repo=String(repo||'').trim().replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,'').replace(/\/+$/,'');
+  if(!/^[\w.-]+\/[\w.-]+$/.test(repo)){toast('Repo bitte als «Besitzer/Name» eingeben');return}
+  if(token)SY.cfg.token=token.trim();
+  if(!SY.cfg.token){toast('Bitte den GitHub-Token einfügen');return}
+  SY.cfg.repo=repo;SY.cfg.path='daten.json';SY.cfg.linked=false;sySaveCfg();sySay('Verbinde …');
+  try{
+    const g=await syGet();
+    const has=d=>d&&(Object.keys(d.days||{}).length||Object.keys(d.quarters||{}).length);
+    if(!has(g.doc)){SY.cfg.linked=true;sySaveCfg();return syncRun()}
+    if(!has(S)){syBackup();syApplyRemote(g.doc);SY.cfg.linked=true;sySaveCfg();sySay('✓ Daten aus der Cloud übernommen','ok');refresh();return}
+    SY.choice=g.doc;sySay('Bitte wählen, wie die Daten zusammengeführt werden','');
+    showSheet(`<h2>Daten vorhanden</h2>
+      <p class="small">Auf diesem Gerät und in der Cloud gibt es schon Daten (Cloud: ${Object.keys(g.doc.days||{}).length} Tage, ${Object.keys(g.doc.quarters||{}).length} Quartale; hier: ${Object.keys(S.days).length} Tage, ${Object.keys(S.quarters).length} Quartale). Vor jeder Wahl legt die App eine Sicherung auf diesem Gerät an.</p>
+      <div class="spacer"></div>
+      <button class="btn primary" style="width:100%" data-sy="merge">Zusammenführen (empfohlen)</button>
+      <p class="small muted" style="margin:4px 0 12px">Je Tag und Quartal gilt die neuere Änderung; bei Gleichstand die Cloud.</p>
+      <button class="btn" style="width:100%" data-sy="remote">Cloud übernehmen</button>
+      <p class="small muted" style="margin:4px 0 12px">Die Daten auf diesem Gerät werden durch den Cloud-Stand ersetzt.</p>
+      <button class="btn danger" style="width:100%" data-sy="local">Meine Daten hochladen</button>
+      <p class="small muted" style="margin:4px 0 12px">Der Cloud-Stand wird durch die Daten dieses Geräts ersetzt.</p>
+      <button class="btn" style="width:100%" data-close>Abbrechen</button>`);
+  }catch(e){sySay(syErr(e),'err')}
+}
+async function syChoose(mode){
+  closeSheet();syBackup();
+  try{
+    if(mode==='remote'){syApplyRemote(SY.choice);SY.cfg.linked=true;sySaveCfg();sySay('✓ Daten aus der Cloud übernommen','ok');refresh();return}
+    if(mode==='merge'){SY.cfg.linked=true;sySaveCfg();return syncRun()}
+    SY.cfg.linked=true;sySaveCfg();
+    for(let i=0;i<4;i++){const g=await syGet();if((await syPut(syncDoc(),g.sha))==='ok'){sySay('✓ Daten hochgeladen '+syTime(),'ok');return}}
+    sySay('⚠ Hochladen fehlgeschlagen – bitte erneut versuchen','err');
+  }catch(e){sySay(syErr(e),'err')}
+}
+function syncDisconnect(){clearTimeout(SY.timer);SY.cfg.token='';SY.cfg.linked=false;sySaveCfg();sySay('Getrennt – Daten bleiben auf diesem Gerät','')}
+const syKeepMeta=old=>{S.meta.snap=old.snap;S.meta.st=old.st;S.meta.del=old.del};
+function syncCard(){
+  const on=syncOn(),st=SY.msg||(on?'Verbunden'+(SY.cfg.last?' · zuletzt '+new Date(SY.cfg.last).toLocaleString('de-CH',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''):'Nicht verbunden');
+  return `<div class="card"><h2>Synchronisierung</h2>
+    <p class="small muted" style="margin:0 0 10px">Gleicht Tage, Quartale und Einstellungen zwischen deinen Geräten über ein privates GitHub-Repo ab. Der Token bleibt nur auf diesem Gerät.</p>
+    <label class="f">Daten-Repo (Besitzer/Name)<input type="text" id="syRepo" value="${esc(SY.cfg.repo||'claudemn61/Heizkosten-Daten')}" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+    <label class="f">GitHub-Token<input type="password" id="syTok" placeholder="${SY.cfg.token?'gespeichert – nur zum Ersetzen eintragen':'github_pat_…'}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:10px"><button class="btn sm primary" id="bSyCon">${on?'Neu verbinden':'Verbinden'}</button>${on?'<button class="btn sm" id="bSyNow">Jetzt abgleichen</button><button class="btn sm danger" id="bSyOff">Trennen</button>':''}</div>
+    <p class="small" id="syncstat" data-k="${SY.kind}" style="margin:10px 0 0">${esc(st)}</p>
+    <details class="how" style="margin-top:10px"><summary>Einrichtung (einmalig)</summary>
+      <p><b>1. Privates Repo anlegen:</b> github.com → «New repository» → Name <i>Heizkosten-Daten</i> → <b>Private</b> → «Add a README file» → «Create repository».</p>
+      <p><b>2. Token erstellen:</b> github.com → Profilbild → Settings → Developer settings → Personal access tokens → Fine-grained tokens → «Generate new token». Name z. B. <i>Heizkosten</i>, Ablauf 1 Jahr, «Only select repositories» → <i>Heizkosten-Daten</i>. Unter «Repository permissions» → <b>Contents: Read and write</b>. «Generate token», Token kopieren (wird nur einmal angezeigt).</p>
+      <p><b>3. Hier verbinden:</b> Repo-Name und Token einfügen → «Verbinden». Auf jedem weiteren Gerät dasselbe (derselbe Token genügt).</p>
+      <p>Nach Ablauf des Tokens zeigt die App «Token ungültig»: neuen Token erstellen und hier einfügen.</p></details></div>`;
+}
+$('#sheetBody').addEventListener('click',e=>{const b=e.target.closest('button[data-sy]');if(b)syChoose(b.dataset.sy)});
+syncStamp();
 function setDay(k,patch){
   const r={...(S.days[k]||{}),...patch};
   for(const f of['e','p']) if(r[f]==null||r[f]==='') delete r[f];
@@ -740,7 +920,7 @@ $('#v-kosten').addEventListener('change',e=>{
   if(Number.isNaN(v)){toast('Ungültige Zahl');renderKosten();return}
   const rec={...(S.quarters[qk]||{})};
   if(v==null)delete rec[f];else rec[f]=(f==='c')?v:Math.abs(v);   // Produktion im Portal oft negativ -> positiv speichern
-  if(Object.keys(rec).length)S.quarters[qk]=rec;else delete S.quarters[qk];
+  if(Object.keys(rec).filter(f=>f!=='u').length)S.quarters[qk]=rec;else delete S.quarters[qk];
   save();renderKosten();
 });
 
@@ -982,7 +1162,7 @@ function applyCsv(){
 function applyJson(txt,mode){
   let o;try{o=JSON.parse(txt)}catch{toast('Datei ist kein gültiges JSON');return}
   if(!o||typeof o.days!=='object'){toast('Das ist keine Heizkosten-Sicherung');return}
-  if(mode==='replace'){S=migrate({...o,meta:{...(o.meta||{}),lastBackup:S.meta.lastBackup}})}
+  if(mode==='replace'){const old=S.meta;S=migrate({...o,meta:{...(o.meta||{}),lastBackup:S.meta.lastBackup}});syKeepMeta(old)}
   else{
     Object.assign(S.days,o.days||{});
     Object.entries(o.quarters||{}).forEach(([k,v])=>{S.quarters[k]={...(S.quarters[k]||{}),...v}});
@@ -1049,6 +1229,7 @@ function renderDaten(){
     <h3 style="margin-top:16px">Wetterdaten</h3>
     <p class="small muted" style="margin:0 0 8px">MeteoSchweiz, Station Ulrichen (1346 m), Tagesmittel: ${Object.keys(WX.t).length?Object.keys(WX.t).length+' Tage bis '+fmtDate(wxLast())+' · geladen '+new Date(WX.at).toLocaleDateString('de-CH'):'noch nicht geladen'}. Wird beim Öffnen der Analyse automatisch aktualisiert.</p>
     <div class="row"><button class="btn sm" id="bWx">Wetterdaten jetzt laden</button></div></div>
+  ${syncCard()}
   <div class="card"><h2>Info</h2>
     <dl class="kv"><dt>Version</dt><dd>${VERSION}</dd><dt>Speicher</dt><dd id="persist">…</dd></dl>
     <details class="how" style="margin-top:10px"><summary>Änderungsprotokoll</summary>${CHANGELOG.map(c=>`<p><b>${c.v}</b> · ${c.d}<br>${c.t.map(esc).join('<br>')}</p>`).join('')}</details>
@@ -1065,13 +1246,16 @@ $('#v-daten').addEventListener('click',e=>{
   else if(b.id==='bExpQ')exportQuartersCsv();
   else if(b.id==='bImpCsv')$('#fileCsv').click();
   else if(b.id==='bFrostBest'){S.settings.frostRun=+b.dataset.t;save();toast(`Schwelle ${nf(S.settings.frostRun,1)} °C übernommen`);renderDaten()}
+  else if(b.id==='bSyCon')syncConnect($('#syRepo').value,$('#syTok').value).then(()=>{if(ui.tab==='daten'&&$('#sheet').hidden)renderDaten()});
+  else if(b.id==='bSyNow')syncRun();
+  else if(b.id==='bSyOff'){syncDisconnect();renderDaten()}
   else if(b.id==='bWx'){b.disabled=true;b.textContent='Lade …';wxFetch().then(n=>{toast(`Wetterdaten: ${n} Tage geladen`);renderDaten()}).catch(e=>{toast('Wetter: Abruf fehlgeschlagen');renderDaten()})}
   else if(b.id==='bPaste'){const t=$('#csvPaste').value.trim();t?startCsv(t):toast('Bitte Text einfügen')}
   else if(b.dataset.csv==='go')applyCsv();
   else if(b.dataset.csv==='cancel'){ui.csv=null;renderCsvPanel()}
   else if(b.id==='bWipe'){
-    if(confirm('Wirklich ALLE Tage, Kosten und Einstellungen löschen? Das kann nicht rückgängig gemacht werden.')&&confirm('Letzte Rückfrage: Haben Sie eine Sicherung exportiert?')){
-      S=defaults();save();toast('Alle Daten gelöscht');renderDaten()}
+    if(confirm('Wirklich ALLE Tage, Kosten und Einstellungen löschen? Das kann nicht rückgängig gemacht werden.'+(syncOn()?'\n\nAchtung: Die Synchronisierung löscht die Daten auch in der Cloud und auf deinen anderen Geräten.':''))&&confirm('Letzte Rückfrage: Haben Sie eine Sicherung exportiert?')){
+      const old=S.meta;S=defaults();syKeepMeta(old);save();toast('Alle Daten gelöscht');renderDaten()}
   }
 });
 $('#v-daten').addEventListener('change',e=>{
@@ -1101,8 +1285,11 @@ if('serviceWorker' in navigator&&location.protocol!=='file:'){
   }).catch(()=>{});
 }
 if(navigator.storage?.persist)navigator.storage.persist().catch(()=>{});
-window.__hkb={get S(){return S},qInfo,yInfo,forecast,startCsv,applyJson,go,VERSION};
+window.__hkb={get S(){return S},SY,syncRun,syncMerge,qInfo,yInfo,forecast,startCsv,applyJson,go,VERSION};
 go('erfassen');
+if(syncOn())syncRun();
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&syncOn()&&Date.now()-SY.t>60000)syncRun()});
+addEventListener('online',()=>{if(syncOn())syncRun()});
 })();
 </script>
 </body>

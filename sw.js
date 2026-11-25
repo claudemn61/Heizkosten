@@ -1,5 +1,5 @@
 /* Service Worker – Heizkosten Bellwald. Bei jeder Version CACHE-Namen anpassen. */
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const CACHE = 'hkb-' + VERSION;
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/icon.svg'];
 
@@ -14,6 +14,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
+  if (url.origin !== location.origin) return;   // Wetter und GitHub-Abgleich direkt über das Netz
   const isPage = e.request.mode === 'navigate' || url.pathname.endsWith('/') || url.pathname.endsWith('.html') || url.pathname.endsWith('sw.js');
   if (isPage) {
     // Netzwerk zuerst (immer aktuell), Cache nur offline

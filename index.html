@@ -199,8 +199,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='1.2.2', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='2.0.0', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'2.0.0',d:'25.11.2026',t:['Analyse: neue Karte «Grafik nach Wahl» – X-Achse Tag, Monat, Quartal oder Jahr; Y-Achse Ø Verbrauch je Tag, Verbrauch (kWh), Heiztage, Heizgradtage, Stromkosten, PV-Produktion oder CHF je Heizgradtag; Zeitraum wählbar, Auswahl wird gemerkt','Geschätzte Werte (Modell/Prognose) erscheinen hell','Jahr: Spalte «Heizgradtage (Σ)» in der Spaltenwahl']},
   {v:'1.2.2',d:'25.11.2026',t:['Jahr: Spaltenwahl um «Ø Temperatur (°C)» je Monat ergänzt (ganz rechts; folgt der Wahl Bellwald/Geschinen)']},
   {v:'1.2.1',d:'25.11.2026',t:['Jahr: rechts neben der Heiztage-Summe optional Summe kWh und CHF je Monat (geschätzt); Auswahl über das Listen-Symbol oben rechts in der Karte']},
   {v:'1.2.0',d:'25.11.2026',t:['Synchronisierung zwischen Geräten über ein privates GitHub-Repo (Daten → Synchronisierung): Token und Repo nur auf dem jeweiligen Gerät','Abgleich pro Eintrag (Tag, Quartal, Einstellung) mit Änderungszeitpunkt und Löschmarkern: Änderungen auf verschiedenen Geräten gehen nicht verloren','Automatischer Abgleich beim Öffnen und nach Änderungen, Nachschreiben nach Offline-Betrieb, Statusanzeige']},
@@ -879,6 +880,11 @@ $('#v-jahr').addEventListener('change',e=>{const t=e.target;
   if(t.dataset.col){const cur=new Set(S.settings.jahrCols||['d']);t.checked?cur.add(t.dataset.col):cur.delete(t.dataset.col);if(!cur.size){cur.add(t.dataset.col);toast('Mindestens eine Spalte bleibt sichtbar')}S.settings.jahrCols=['d','g','kwh','chf','t'].filter(c=>cur.has(c));save();renderJahr();return}
  if(!t.dataset.pz||!/^\d{4}-\d\d-\d\d$/.test(t.value))return;ui[t.dataset.pz]=t.value;renderJahr()});
 
+$('#v-analyse').addEventListener('change',e=>{const t=e.target,k=t.dataset.dc;if(!k)return;
+  const d=ui.dc||(ui.dc=dcLoad());d[k]=t.value;
+  if(k==='x'){d.r='auto';if(!dcOK(d.x,d.y))d.y='kwh'}
+  dcSave();renderAnalyse()});
+
 /* ====================== Tab: Kosten ====================== */
 function qCard(x){
   const open=x.c==null, started=x.start<=todayKey();
@@ -1016,7 +1022,7 @@ function drawColumns(plot,spec,w,hidden){
     s+=`<text x="${cx}" y="${H-8}" text-anchor="middle" font-size="11" fill="var(--mut)">${esc(c)}</text>`;
     vis.forEach((si,j)=>{
       const v=spec.series[si].values[i];if(v==null)return;
-      s+=`<path d="${barPath(x0+j*(bw+gap),y0,y(v),bw,4)}" fill="${spec.series[si].color}"/>`;
+      s+=`<path d="${barPath(x0+j*(bw+gap),y0,y(v),bw,4)}" fill="${spec.series[si].color}"${spec.est&&spec.est[i]?' fill-opacity=".4"':''}/>`;
       if(spec.labels&&nv===1)s+=`<text x="${cx}" y="${v>=0?y(v)-5:y(v)+13}" text-anchor="middle" font-size="11" fill="var(--tx2)">${(spec.labelFmt||spec.fmt)(v)}</text>`;
     });
   });
@@ -1054,6 +1060,89 @@ function drawLines(plot,spec,w,hidden){
 }
 
 /* ====================== Tab: Analyse ====================== */
+/* ====================== Dynamische Grafik (Analyse) ====================== */
+const DC_X={d:'Tag',m:'Monat',q:'Quartal',y:'Jahr'};
+const DC_Y={perday:'Ø Verbrauch je Tag (kWh)',kwh:'Verbrauch (kWh, Summe)',d:'Heiztage',hgt:'Heizgradtage',chf:'Stromkosten (CHF)',pv:'PV-Produktion (kWh)',u:'CHF je Heizgradtag'};
+const dcOK=(x,y)=>!((y==='pv'||y==='u')&&(x==='d'||x==='m'));
+function dcLoad(){let o={};try{o=JSON.parse(localStorage.getItem('hkb.dc.v1')||'{}')}catch(e){}
+  const d={x:DC_X[o.x]?o.x:'q',y:DC_Y[o.y]?o.y:'kwh',r:o.r||'auto'};if(!dcOK(d.x,d.y))d.y='kwh';return d}
+function dcSave(){try{localStorage.setItem('hkb.dc.v1',JSON.stringify(ui.dc))}catch(e){}}
+function dcRangeOpts(x){
+  const now=new Date().getFullYear(),ys=yearRange().filter(y=>y<=now).reverse();
+  if(x==='d')return[['auto','Letzte 90 Tage'],['r30','Letzte 30 Tage'],['r365','Letzte 365 Tage'],...ys.map(y=>['y'+y,String(y)])];
+  if(x==='m')return[['auto','Alle Jahre'],...ys.map(y=>['y'+y,String(y)])];
+  return null;
+}
+function dcBuckets(x,r){
+  const now=new Date().getFullYear(),td=todayKey(),yrs=yearRange().filter(y=>y<=now),out=[];
+  if(x==='y')yrs.forEach(y=>out.push({a:key(y,0,1),b:key(y,11,31),cat:String(y),title:String(y),y}));
+  else if(x==='q')yrs.forEach(y=>[1,2,3,4].forEach(q=>{const m0=(q-1)*3;out.push({a:key(y,m0,1),b:key(y,m0+2,dim(y,m0+2)),cat:q===1?String(y):'',title:`Q${q} ${y}`,y,q})}));
+  else if(x==='m'){
+    const sel=/^y\d{4}$/.test(r)?[+r.slice(1)]:yrs;
+    sel.forEach(y=>{for(let m=0;m<12;m++)out.push({a:key(y,m,1),b:key(y,m,dim(y,m)),cat:sel.length>1?(m===0?String(y):''):MON[m],title:`${MONTHS[m]} ${y}`,y,m})})}
+  else{
+    let a,b;
+    if(/^y\d{4}$/.test(r)){const y=+r.slice(1);a=key(y,0,1);b=key(y,11,31)}
+    else{const n=r==='r30'?30:r==='r365'?365:90;b=td;a=addDays(td,-(n-1))}
+    let k=a,g=0;
+    while(k<=b&&g++<400){const p=parseKey(k);
+      out.push({a:k,b:k,cat:p.d===1?(p.m===0?String(p.y):MON[p.m]):'',title:fmtDate(k),y:p.y});k=addDays(k,1)}
+  }
+  return out;
+}
+function dcValue(Y,x,bk){
+  const td=todayKey(),wx=Object.keys(WX.t).length>0;
+  let est=bk.b>td,v=null;
+  const qs=x==='q'?[[bk.y,bk.q]]:x==='y'?[1,2,3,4].map(q=>[bk.y,q]):null;
+  if(Y==='d'){const pe=periodEst(bk.a,bk.b);v=pe.heated;est=bk.b>td;return{v,est}}
+  if(Y==='hgt'){if(!wx)return{v:null,est};const pe=periodEst(bk.a,bk.b);if(pe.noWx)return{v:null,est};if(pe.nT>0)est=true;return{v:pe.hgt,est}}
+  if(Y==='kwh'||Y==='perday'||Y==='chf'){
+    const days=Math.round((new Date(bk.b)-new Date(bk.a))/864e5)+1;let s=0;
+    if(qs){
+      for(const[y,q]of qs){const xi=qInfo(y,q),act=Y==='chf'?xi.c:xi.e;
+        if(act!=null){s+=act;continue}
+        if(!wx)return{v:null,est:true};
+        const pe=periodEst(xi.start,xi.end);
+        if(pe.noWx||(Y==='chf'?pe.noChf:pe.noKwh))return{v:null,est:true};
+        s+=Y==='chf'?pe.chf:pe.kwh;est=true}
+    }else{
+      if(!wx)return{v:null,est:true};
+      const pe=periodEst(bk.a,bk.b);
+      if(pe.noWx||(Y==='chf'?pe.noChf:pe.noKwh))return{v:null,est:true};
+      s=Y==='chf'?pe.chf:pe.kwh;est=true}
+    return{v:Y==='perday'?s/days:s,est};
+  }
+  if(Y==='pv'){let s=0,n=0;qs.forEach(([y,q])=>{const p=qInfo(y,q).p;if(p!=null){s+=p;n++}});return{v:n?s:null,est:n<qs.length}}
+  if(Y==='u'){
+    if(x==='q'){const u=qInfo(bk.y,bk.q).u;return{v:u,est:false}}
+    return{v:yInfo(bk.y).u??null,est:false}}
+  return{v:null,est};
+}
+function dcCard(){
+  const d=ui.dc||(ui.dc=dcLoad()),ro=dcRangeOpts(d.x),rv=ro?(ro.some(o=>o[0]===d.r)?d.r:'auto'):'auto';
+  const o=(val,txt,cur,dis)=>`<option value="${val}"${val===cur?' selected':''}${dis?' disabled':''}>${txt}</option>`;
+  return `<div class="card"><h2>Grafik nach Wahl</h2>
+    <div class="grid2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0 12px">
+    <label class="f">X-Achse<select data-dc="x">${Object.entries(DC_X).map(([k,t])=>o(k,t,d.x)).join('')}</select></label>
+    <label class="f">Y-Achse<select data-dc="y">${Object.entries(DC_Y).map(([k,t])=>o(k,t,d.y,!dcOK(d.x,k))).join('')}</select></label>
+    ${ro?`<label class="f">Zeitraum<select data-dc="r">${ro.map(([k,t])=>o(k,t,rv)).join('')}</select></label>`:''}</div>
+    <div id="cdc" style="margin-top:8px"></div><p class="small muted" id="dcNote" style="margin:6px 0 0"></p></div>`;
+}
+function dcMount(){
+  const host=$('#cdc');if(!host)return;
+  const d=ui.dc,bks=dcBuckets(d.x,d.r),vals=bks.map(b=>dcValue(d.y,d.x,b)),Y=d.y;
+  const real=vals.filter(z=>z.v!=null),mx=Math.max(0,...real.map(z=>z.v));
+  const dec=Y==='u'?2:(Y==='perday'||Y==='hgt'&&d.x==='d')?1:(Y==='chf'&&d.x==='d')?2:0;
+  const fmt=v=>{const t=nf(v,dec);return({perday:t+' kWh/Tag',kwh:t+' kWh',d:t+(d.x==='d'?'':' Tage'),hgt:t+' HGT',chf:'CHF '+t,pv:t+' kWh',u:'CHF '+t})[Y].replace('-','−')};
+  const tick=v=>nf(v,mx<2?2:mx<20?1:0);
+  const est=vals.map(z=>z.est),anyEst=real.some(z=>z.est);
+  if(!real.length){host.innerHTML='<p class="muted">Für diese Auswahl liegen keine Daten vor'+((Y==='kwh'||Y==='perday'||Y==='chf'||Y==='hgt')&&!Object.keys(WX.t).length?' (Wetterdaten fehlen)':'')+'.</p>';$('#dcNote').textContent='';return}
+  mountChart(host,{type:d.x==='d'?'lines':'columns',cats:bks.map(b=>b.cat),catTitle:i=>bks[i].title+(est[i]&&vals[i].v!=null?' · geschätzt':''),
+    series:[{name:DC_Y[Y],color:'var(--s1)',values:vals.map(z=>z.v)}],fmt,yTick:tick,yw:46,est,title:DC_X[d.x]+': '+DC_Y[Y]});
+  const notes={perday:'Quartal/Jahr: Verbrauch ÷ Kalendertage; Tag/Monat aus dem Modell.',kwh:'Quartal/Jahr: erfasster Verbrauch, sonst Schätzung. Tag/Monat: Modell – der Quartalsverbrauch wird nach Heizgradtagen verteilt, Grundlast ohne Heizung erscheint dort nicht einzeln.',d:'Heiztage = Tage auf 21 °C (inkl. geplanter).',hgt:'Aus den Wetterdaten (Bellwald umgerechnet); künftige Tage mit Klimamittel.',chf:'Quartal/Jahr: abgerechnete Kosten, wo vorhanden; sonst Modellschätzung. Tag/Monat sind immer Schätzungen (Heizgradtage × Preis je Heizgradtag).',pv:'Nur pro Quartal/Jahr erfasst. Jahr: Summe der erfassten Quartale.',u:'Nur für abgerechnete Quartale; Jahr = Kosten ÷ Heizgradtage der abgerechneten Quartale.'};
+  $('#dcNote').innerHTML=[notes[Y],anyEst&&d.x!=='d'?'Hell dargestellt = geschätzt bzw. unvollständig (Modell/Prognose).':'',d.x==='d'&&anyEst?'Tage ohne Messwert (z. B. nach heute): Klimamittel bzw. Prognose.':''].filter(Boolean).join(' ');
+}
+
 function renderAnalyse(){
   const el=$('#v-analyse'),yrs=yearRange().filter(y=>y<=new Date().getFullYear()),yis=yrs.map(yInfo),now=new Date().getFullYear();
   const kpi=`<div class="scroll"><table><thead><tr><th>Jahr</th><th>Heiztage</th><th>Kosten</th><th>CHF/Heiztag</th><th>CHF/HGT</th><th>kWh Verbr.</th><th>kWh PV</th><th>CHF/kWh</th></tr></thead><tbody>${
@@ -1084,12 +1173,14 @@ function renderAnalyse(){
   el.innerHTML=`
   <div class="card"><h2>Jahresvergleich</h2>${kpi}</div>
   ${avgCard}
+  ${dcCard()}
   <div class="card"><h2>Heiztage pro Jahr</h2><div id="c1"></div></div>
   <div class="card"><h2>Heiztage pro Monat</h2><div id="c2"></div></div>
   <div class="card"><h2>Stromkosten pro Quartal</h2><div id="c3"></div><p class="small muted" style="margin-bottom:0">Negative Balken: Gutschrift aus PV-Einspeisung.</p></div>
   <div class="card"><h2>Verbrauch und PV-Produktion pro Quartal</h2>${qWithKwh.length?'<div id="c4"></div>':'<p class="muted">Noch keine kWh-Daten erfasst.</p>'}</div>
   <div class="card"><h2>CHF je Heizgradtag</h2><div id="c5"></div><p class="small muted" style="margin-bottom:0">Kostenniveau pro Heizgradtag, also bereinigt um Wetter, Jahreszeit und Frostschutztage – zeigt Tarif- und Verbrauchsentwicklung. Q3 ist ausgeblendet, weil PV-Gutschriften den Wert dort verzerren (Legende antippen zum Einblenden).</p></div>
   ${fcs.length?`<div class="card"><h2>Prognose ${now}</h2>${fcs.map(f=>`<p style="margin:4px 0">Q${f.cur.q}: ca. <b>${chf(f.est,0)}</b> <span class="muted small">(${chf(f.lo,0)} – ${chf(f.hi,0)})</span></p>`).join('')}<p class="small muted" style="margin-bottom:0">Schätzung aus den erwarteten Heizgradtagen und dem ø Preis je Heizgradtag desselben Quartals der Vorjahre. Geplante Heiztage (künftig) fliessen ein.</p></div>`:''}`;
+  dcMount();
   mountChart($('#c1'),{type:'columns',cats:yrs.map(String),series:[{name:'Heiztage',color:'var(--s1)',values:yis.map(x=>x.d21)}],fmt:v=>nf(v,0),labels:true,title:'Heiztage pro Jahr'});
   mountChart($('#c2'),{type:'lines',cats:MON,series:ys.map(y=>({name:String(y),color:yearColor(y),values:monthCounts(y).map((v,m)=>(y===now&&m>new Date().getMonth()&&v===0)?null:v)})),fmt:v=>nf(v,0)+' Tage',yTick:v=>nf(v,0),title:'Heiztage pro Monat'});
   mountChart($('#c3'),{type:'columns',cats:['Q1','Q2','Q3','Q4'],series:yrs.map((y,i)=>({name:String(y),color:yearColor(y),values:yis[i].qs.map(x=>x.c)})),fmt:v=>chf(v,2),title:'Stromkosten pro Quartal'});

@@ -1,5 +1,11 @@
 # Änderungsprotokoll
 
+## 2.0.0 – 25.11.2026
+- Analyse: neue Karte «Grafik nach Wahl» – X-Achse Tag, Monat, Quartal oder Jahr; Y-Achse Ø Verbrauch je Tag, Verbrauch (kWh), Heiztage, Heizgradtage, Stromkosten, PV-Produktion oder CHF je Heizgradtag
+- Zeitraum für Tag und Monat wählbar; Auswahl wird auf dem Gerät gemerkt
+- Geschätzte Werte (Modell/Prognose) erscheinen hell; Abrechnungs- und Erfassungswerte voll
+- Jahr: Spalte «Heizgradtage (Σ)» in der Spaltenwahl
+
 ## 1.2.2 – 25.11.2026
 - Jahr: Spaltenwahl um «Ø Temperatur (°C)» je Monat ergänzt (ganz rechts; folgt der Wahl Bellwald/Geschinen)
 

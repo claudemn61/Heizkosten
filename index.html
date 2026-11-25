@@ -98,6 +98,11 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .heat .hc.fut.on{background:color-mix(in srgb,var(--heat) 35%,var(--page));outline:1px dashed var(--heat);outline-offset:-1px}
 .heat .hc.void{background:none;cursor:default}
 .heat .gap{margin-top:7px}
+.cardhd{display:flex;align-items:center;justify-content:space-between;position:relative;margin-bottom:8px}
+.cardhd h2{margin:0}
+.colmenu{position:absolute;right:0;top:100%;z-index:6;background:var(--surface);border:1px solid var(--bd);border-radius:12px;padding:6px 14px;box-shadow:0 6px 20px rgba(0,0,0,.18);min-width:220px}
+.colmenu label{display:flex;align-items:center;gap:10px;padding:9px 0;font-size:14px;color:var(--tx)}
+.colmenu input{width:auto;min-height:0;margin:0}
 .legendrow{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--tx2);margin-top:12px}
 .tsw{display:inline-flex;border:1px solid var(--bd);border-radius:999px;overflow:hidden;margin-left:auto}
 .tsw button{border:0;background:transparent;color:var(--tx2);font:inherit;font-size:12px;padding:3px 10px;cursor:pointer}
@@ -192,8 +197,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='1.2.0', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='1.2.1', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'1.2.1',d:'25.11.2026',t:['Jahr: rechts neben der Heiztage-Summe optional Summe kWh und CHF je Monat (geschätzt); Auswahl über das Listen-Symbol oben rechts in der Karte']},
   {v:'1.2.0',d:'25.11.2026',t:['Synchronisierung zwischen Geräten über ein privates GitHub-Repo (Daten → Synchronisierung): Token und Repo nur auf dem jeweiligen Gerät','Abgleich pro Eintrag (Tag, Quartal, Einstellung) mit Änderungszeitpunkt und Löschmarkern: Änderungen auf verschiedenen Geräten gehen nicht verloren','Automatischer Abgleich beim Öffnen und nach Änderungen, Nachschreiben nach Offline-Betrieb, Statusanzeige']},
   {v:'1.1.0',d:'25.11.2026',t:['Jahr: neue Karte «Zeitraum» – für beliebige Daten (oder Jahr, Quartal, Monat, 12 Monate) Heiztage, Frostschutztage, Heizgradtage sowie geschätzte kWh und Kosten, getrennt nach Schätzung/Prognose','Tag-Dialog: Schätzung für den Tag (Heizgradtage, kWh, CHF)','Temperaturkorrektur Ulrichen → Bellwald (Einstellungen), Umschalter Bellwald/Geschinen in der Jahresansicht']},
   {v:'1.0.2',d:'25.11.2026',t:['Monatswerte (Heizbedarf je Monat) und Frostfaktor entfernt: Kostenmodell und Prognose rechnen direkt mit Heizgradtagen aus den Wetterdaten; künftige Tage mit Klimamittel der Vorjahre','«CHF je gewichtetem Tag» heisst jetzt «CHF je Heizgradtag»']},
@@ -806,7 +812,8 @@ function renderJahr(){
   const hasWx=Object.keys(WX.t).length>0;let nFz=0;
   const tal=S.settings.jahrTemp==='tal',dT=k=>tal?(WX.t[k]??null):wxT(k),dName=tal?'Tal (Ulrichen ≈ Geschinen)':'Bellwald geschätzt';
   const el=$('#v-jahr'),y=ui.jy,t=todayKey(),yi=yInfo(y);
-  let grid='<span></span>'+Array.from({length:31},(_,i)=>`<span class="hh">${[1,5,10,15,20,25,30].includes(i+1)?i+1:''}</span>`).join('')+'<span class="hh">Σ</span>';
+  const COLS=['d','kwh','chf'],COLN={d:'Σ',kwh:'kWh',chf:'CHF'},cols=COLS.filter(c=>(S.settings.jahrCols||['d']).includes(c));
+  let grid='<span></span>'+Array.from({length:31},(_,i)=>`<span class="hh">${[1,5,10,15,20,25,30].includes(i+1)?i+1:''}</span>`).join('')+cols.map(c=>`<span class="hh">${COLN[c]}</span>`).join('');
   const mc=monthCounts(y);
   for(let m=0;m<12;m++){
     const g=[3,6,9].includes(m)?' gap':'';
@@ -816,12 +823,13 @@ function renderJahr(){
       const k=key(y,m,d),on=isHeated(k),fz=!on&&wxT(k)!=null&&wxT(k)<frostRun();if(fz)nFz++;
       grid+=`<button class="hc${on?' on':fz?' fz':''}${k>t?' fut':''}${g}" data-k="${k}" aria-label="${fmtDate(k)}, ${on?'Heiztag':fz?'Frostschutz, heizt vermutlich':'Frostschutz'}${dT(k)!=null?', '+dT(k).toFixed(1)+' °C':''}" title="${dT(k)!=null?dT(k).toFixed(1)+' °C ('+dName+'; '+(tal?'Bellwald geschätzt '+wxT(k).toFixed(1):'Ulrichen '+WX.t[k].toFixed(1))+' °C)':''}">${dT(k)!=null?`<span class="tmp">${String(Math.round(dT(k))).replace('-','−')}°</span>`:''}</button>`;
     }
-    grid+=`<span class="hs${g}">${mc[m]}</span>`;
+    const pe=cols.some(c=>c!=='d')&&hasWx?periodEst(key(y,m,1),key(y,m,dim(y,m))):null,pv=(v,no)=>(!pe||pe.noWx||(no&&!v))?'–':nf(v,0);
+    grid+=cols.map(c=>`<span class="hs${g}">${c==='d'?mc[m]:c==='kwh'?pv(pe?.kwh,pe?.noKwh):pv(pe?.chf,pe?.noChf)}</span>`).join('');
   }
   el.innerHTML=`${ysel('jy',y)}
-  <div class="card"><h2>Heiztage ${y}</h2><div class="heat">${grid}</div>
+  <div class="card"><div class="cardhd"><h2>Heiztage ${y}</h2><button type="button" class="btn sm" data-colmenu aria-label="Spalten rechts wählen" aria-expanded="${!!ui.colmenu}">☰</button>${ui.colmenu?`<div class="colmenu" role="group" aria-label="Spalten rechts">${COLS.map(c=>`<label><input type="checkbox" data-col="${c}" ${cols.includes(c)?'checked':''}>${{d:'Heiztage (Σ)',kwh:'kWh (geschätzt)',chf:'CHF (geschätzt)'}[c]}</label>`).join('')}</div>`:''}</div><div class="heat" style="grid-template-columns:2.4rem repeat(31,minmax(0,1fr))${cols.map(c=>c==='d'?' 2.4rem':' 3rem').join('')}">${grid}</div>
     <div class="legendrow"><span><i style="background:var(--heat)"></i>Heiztag</span><span><i style="background:var(--off)"></i>Frostschutz</span>${hasWx?`<span><i style="background:var(--fz)"></i>Frostschutz heizt vermutlich</span>`:''}<span><i style="background:color-mix(in srgb,var(--heat) 35%,var(--page));outline:1px dashed var(--heat)"></i>geplant</span>${hasWx?`<span class="tsw" role="group" aria-label="Angezeigte Temperaturen"><button type="button" data-tsw="bw" class="${tal?'':'on'}">Bellwald</button><button type="button" data-tsw="tal" class="${tal?'on':''}">Geschinen</button></span>`:''}</div>
-    <p class="small muted" style="margin-bottom:0">Tag antippen zum Bearbeiten. Zeilenende: Heiztage im Monat.</p></div>
+    <p class="small muted" style="margin-bottom:0">Tag antippen zum Bearbeiten. Spalten rechts (☰ oben): Heiztage, kWh und CHF je Monat – kWh und CHF sind Schätzungen des Modells.</p></div>
   <div class="tiles">
     <div class="tile"><div class="l">Heiztage</div><div class="v">${yi.d21}</div></div>
     <div class="tile"><div class="l">Frostschutztage</div><div class="v">${yi.d8}</div></div>
@@ -850,7 +858,10 @@ function pzCard(y,hasWx){
     ${tiles}</div>`;
 }
 $('#v-jahr').addEventListener('click',e=>{
-  const b=e.target.closest('button');if(!b)return;
+  const b=e.target.closest('button');
+  if(ui.colmenu&&!e.target.closest('.colmenu,[data-colmenu]')){ui.colmenu=false;renderJahr()}
+  if(!b)return;
+  if(b.hasAttribute('data-colmenu')){ui.colmenu=!ui.colmenu;renderJahr();return}
   if(b.dataset.y){ui.jy+=+b.dataset.y;ui.pf=ui.pt=null;renderJahr()}
   else if(b.dataset.pq){const t=parseKey(todayKey()),y=ui.jy;
     const R={year:[key(y,0,1),key(y,11,31)],q:[key(t.y,Math.floor(t.m/3)*3,1),key(t.y,Math.floor(t.m/3)*3+2,dim(t.y,Math.floor(t.m/3)*3+2))],
@@ -860,7 +871,9 @@ $('#v-jahr').addEventListener('click',e=>{
   else if(b.dataset.k)openDay(b.dataset.k);
 });
 
-$('#v-jahr').addEventListener('change',e=>{const t=e.target;if(!t.dataset.pz||!/^\d{4}-\d\d-\d\d$/.test(t.value))return;ui[t.dataset.pz]=t.value;renderJahr()});
+$('#v-jahr').addEventListener('change',e=>{const t=e.target;
+  if(t.dataset.col){const cur=new Set(S.settings.jahrCols||['d']);t.checked?cur.add(t.dataset.col):cur.delete(t.dataset.col);S.settings.jahrCols=['d','kwh','chf'].filter(c=>cur.has(c));save();renderJahr();return}
+ if(!t.dataset.pz||!/^\d{4}-\d\d-\d\d$/.test(t.value))return;ui[t.dataset.pz]=t.value;renderJahr()});
 
 /* ====================== Tab: Kosten ====================== */
 function qCard(x){

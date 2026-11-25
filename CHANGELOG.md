@@ -1,5 +1,8 @@
 # Änderungsprotokoll
 
+## 1.2.1 – 25.11.2026
+- Jahr: rechts neben der Heiztage-Summe optional Summe kWh und CHF je Monat (geschätzt); Auswahl über das Listen-Symbol oben rechts in der Karte
+
 ## 1.2.0 – 25.11.2026
 - Synchronisierung zwischen Geräten über ein privates GitHub-Repo (Daten → Synchronisierung), Token nur auf dem jeweiligen Gerät
 - Abgleich pro Eintrag (Tag, Quartal, Einstellung) mit Änderungszeitpunkt und Löschmarkern

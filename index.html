@@ -92,15 +92,16 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .heat .hm{font-size:12px;color:var(--tx2)}
 .heat .hs{font-size:12px;text-align:right;color:var(--tx2);font-variant-numeric:tabular-nums}
 .heat .hc{height:15px;border-radius:3px;border:0;padding:0;background:var(--off);cursor:pointer;min-width:0}
+.heat .hc.fz{background:color-mix(in srgb,var(--s2) 62%,var(--page))}
 .heat .hc.on{background:var(--heat)}
 .heat .hc.fut.on{background:color-mix(in srgb,var(--heat) 35%,var(--page));outline:1px dashed var(--heat);outline-offset:-1px}
 .heat .hc.void{background:none;cursor:default}
 .heat .gap{margin-top:7px}
 .legendrow{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--tx2);margin-top:12px}
 .legendrow i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
-.tile{background:var(--page);border:1px solid var(--bd);border-radius:12px;padding:10px 12px}
-.tile .l{font-size:12px;color:var(--tx2)} .tile .v{font-size:22px;font-weight:650;margin-top:2px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.tile{min-width:0;background:var(--page);border:1px solid var(--bd);border-radius:12px;padding:10px 12px}
+.tile .l{font-size:12px;color:var(--tx2)} .tile .v{font-size:22px;font-weight:650;margin-top:2px;overflow-wrap:anywhere}
 .kv{display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-size:14px}
 .kv dt{color:var(--tx2)} .kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:550}
 .qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
@@ -541,6 +542,8 @@ function applyRange(){
 /* ====================== Tab: Jahr ====================== */
 function ysel(id,val){const yr=yearRange();return`<div class="ysel"><button data-y="-1" aria-label="Vorjahr" ${val<=yr[0]?'disabled':''}>‹</button><b>${val}</b><button data-y="1" aria-label="Folgejahr" ${val>=yr[yr.length-1]+1?'':''}>›</button></div>`}
 function renderJahr(){
+  if(!ui.wxTry&&wxAge()>20&&navigator.onLine!==false){ui.wxTry=true;wxFetch().then(()=>{if(ui.tab==='jahr')renderJahr()}).catch(e=>console.warn('Wetter',e))}
+  const hasWx=Object.keys(WX.t).length>0;let nFz=0;
   const el=$('#v-jahr'),y=ui.jy,t=todayKey(),yi=yInfo(y);
   let grid='<span></span>'+Array.from({length:31},(_,i)=>`<span class="hh">${[1,5,10,15,20,25,30].includes(i+1)?i+1:''}</span>`).join('')+'<span class="hh">Σ</span>';
   const mc=monthCounts(y);
@@ -549,18 +552,19 @@ function renderJahr(){
     grid+=`<span class="hm${g}">${MON[m]}</span>`;
     for(let d=1;d<=31;d++){
       if(d>dim(y,m)){grid+=`<span class="hc void${g}"></span>`;continue}
-      const k=key(y,m,d),on=isHeated(k);
-      grid+=`<button class="hc${on?' on':''}${k>t?' fut':''}${g}" data-k="${k}" aria-label="${fmtDate(k)}, ${on?'Heiztag':'Frostschutz'}"></button>`;
+      const k=key(y,m,d),on=isHeated(k),fz=!on&&WX.t[k]!=null&&WX.t[k]<frostRun();if(fz)nFz++;
+      grid+=`<button class="hc${on?' on':fz?' fz':''}${k>t?' fut':''}${g}" data-k="${k}" aria-label="${fmtDate(k)}, ${on?'Heiztag':fz?'Frostschutz, heizt vermutlich':'Frostschutz'}"></button>`;
     }
     grid+=`<span class="hs${g}">${mc[m]}</span>`;
   }
   el.innerHTML=`${ysel('jy',y)}
   <div class="card"><h2>Heiztage ${y}</h2><div class="heat">${grid}</div>
-    <div class="legendrow"><span><i style="background:var(--heat)"></i>Heiztag</span><span><i style="background:var(--off)"></i>Frostschutz</span><span><i style="background:color-mix(in srgb,var(--heat) 35%,var(--page));outline:1px dashed var(--heat)"></i>geplant</span></div>
+    <div class="legendrow"><span><i style="background:var(--heat)"></i>Heiztag</span><span><i style="background:var(--off)"></i>Frostschutz</span>${hasWx?`<span><i style="background:color-mix(in srgb,var(--s2) 62%,var(--page))"></i>Frostschutz heizt vermutlich</span>`:''}<span><i style="background:color-mix(in srgb,var(--heat) 35%,var(--page));outline:1px dashed var(--heat)"></i>geplant</span></div>
     <p class="small muted" style="margin-bottom:0">Tag antippen zum Bearbeiten. Zeilenende: Heiztage im Monat.</p></div>
   <div class="tiles">
     <div class="tile"><div class="l">Heiztage</div><div class="v">${yi.d21}</div></div>
     <div class="tile"><div class="l">Frostschutztage</div><div class="v">${yi.d8}</div></div>
+    ${hasWx?`<div class="tile"><div class="l">Frost heizt vermutl.</div><div class="v">${nFz}</div></div>`:''}
     <div class="tile"><div class="l">Anteil Heiztage</div><div class="v">${pct(yi.d21/yi.days,0)}</div></div>
     <div class="tile"><div class="l">Kosten ${yi.nC<4&&yi.nC>0?`(${yi.nC} Quartale)`:''}</div><div class="v">${yi.chf!=null?chf(yi.chf,0):'–'}</div></div>
   </div>`;

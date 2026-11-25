@@ -43,7 +43,7 @@ header.top{position:sticky;top:0;z-index:5;background:var(--page);border-bottom:
 header.top h1{margin:0;font-size:18px;font-weight:650}
 header.top .sub{color:var(--mut);font-size:13px}
 header.top .ver{margin-left:auto;color:var(--mut);font-size:12px}
-main{max-width:760px;margin:0 auto;padding:14px 14px 24px}
+main{max-width:none;margin:0 auto;padding:14px calc(14px + env(safe-area-inset-left)) 24px calc(14px + env(safe-area-inset-right))}
 h2{font-size:16px;margin:0 0 10px;font-weight:650}
 h3{font-size:14px;margin:0 0 6px;font-weight:650;color:var(--tx2)}
 .card{background:var(--surface);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:14px}
@@ -74,7 +74,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--bd);color:var(--tx2)}
 .pill.on{background:var(--heat);color:#fff;border-color:transparent}
 /* Kalender */
-.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
 .cal .wd{text-align:center;font-size:12px;color:var(--mut);padding:2px 0}
 .cal button,.cal span.void{aspect-ratio:1/1;border-radius:10px;border:1px solid var(--bd);background:var(--page);position:relative;padding:0;cursor:pointer;font-size:15px}
 .cal span.void{border:0;background:none}
@@ -130,7 +130,7 @@ th{font-weight:600;color:var(--tx2);font-size:12px}
 /* Sheet */
 #scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:20}
 #sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--surface);border-radius:18px 18px 0 0;max-height:90vh;overflow:auto;
-  padding:10px 16px calc(18px + env(safe-area-inset-bottom));max-width:760px;margin:0 auto;box-shadow:0 -6px 30px rgba(0,0,0,.25)}
+  padding:10px 16px calc(18px + env(safe-area-inset-bottom));max-width:none;margin:0 auto;box-shadow:0 -6px 30px rgba(0,0,0,.25)}
 #sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--axis);margin:0 auto 12px}
 #sheet .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(86px + env(safe-area-inset-bottom));background:var(--tx);color:var(--page);
@@ -145,7 +145,20 @@ nav.tabs button[aria-current=page]{color:var(--accent);font-weight:600}
 details.how summary{cursor:pointer;font-weight:600;font-size:14px}
 details.how p{font-size:13px;color:var(--tx2);margin:8px 0 0}
 hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
-@media (min-width:700px){.cal button{font-size:16px}.heat .hc{height:18px}}
+@media (min-width:700px){.cal button{font-size:16px}.heat .hc{height:18px}main{padding-top:18px;padding-left:calc(24px + env(safe-area-inset-left));padding-right:calc(24px + env(safe-area-inset-right))}}
+/* iPad / breite Bildschirme: ganze Breite nutzen, Karten in Spalten */
+@media (min-width:900px){
+  .view{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+  .view[hidden]{display:none}
+  .view>*{min-width:0;margin:0}
+  .view>.card{margin-bottom:0}
+  #v-erfassen{grid-template-columns:minmax(300px,1fr) minmax(0,1.5fr)}
+  #v-jahr>*,#v-kosten>*{grid-column:1/-1}
+  #v-analyse>.card:nth-child(-n+2){grid-column:1/-1}
+  .heat .hc{height:22px}
+  .cal button,.cal span.void{aspect-ratio:1.4/1}
+}
+@media (min-width:1500px){.view{gap:20px}}
 @media (forced-colors:active){.cal button.on,.heat .hc.on{forced-color-adjust:none;background:Highlight}}
 </style>
 </head>

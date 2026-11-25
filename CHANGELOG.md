@@ -1,5 +1,9 @@
 # Änderungsprotokoll
 
+## 1.0.2 – 25.11.2026
+- Monatswerte und Frostfaktor entfernt: Kostenmodell und Prognose rechnen direkt mit Heizgradtagen; künftige Tage mit Klimamittel der Vorjahre
+- «CHF je gewichtetem Tag» heisst jetzt «CHF je Heizgradtag»
+
 ## 1.0.1 – 25.11.2026
 - Heizbedarf je Monat wird automatisch aus den Wetterdaten abgeleitet (abschaltbar)
 

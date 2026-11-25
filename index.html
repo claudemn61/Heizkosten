@@ -188,8 +188,9 @@ hr{border:0;border-top:1px solid var(--grid);margin:14px 0}
 (()=>{
 'use strict';
 /* ====================== Konstanten ====================== */
-const VERSION='1.0.1', SCHEMA=1, LS_KEY='hkb.data.v1';
+const VERSION='1.0.2', SCHEMA=1, LS_KEY='hkb.data.v1';
 const CHANGELOG=[
+  {v:'1.0.2',d:'25.11.2026',t:['Monatswerte (Heizbedarf je Monat) und Frostfaktor entfernt: Kostenmodell und Prognose rechnen direkt mit Heizgradtagen aus den Wetterdaten; künftige Tage mit Klimamittel der Vorjahre','«CHF je gewichtetem Tag» heisst jetzt «CHF je Heizgradtag»']},
   {v:'1.0.1',d:'25.11.2026',t:['Heizbedarf je Monat wird automatisch aus den Wetterdaten abgeleitet (abschaltbar, dann gelten die eigenen Werte)']},
   {v:'1.0.0',d:'25.11.2026',t:['Erste stabile Version: Heiztage erfassen, Quartalskosten und kWh, Analysen, Heizgradtage und Wetterdaten, Darstellung Hell/Dunkel']},
   {v:'0.05.00',d:'25.11.2026',t:['Heiztage (21 °C) jetzt rot statt blau – passt zu den orangen Frostschutztagen mit Heizbetrieb','Neue Einstellung: Frostschutz heizt bei Tagesmittel unter … °C; die App zeigt die Schwelle mit der besten Übereinstimmung zu den kWh und übernimmt sie auf Wunsch']},
@@ -208,8 +209,7 @@ const CHANGELOG=[
 const MONTHS=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const WD=['Mo','Di','Mi','Do','Fr','Sa','So'], WDL=['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'];
-const DEFAULT_SETTINGS=()=>({heatTemp:21,frostTemp:8,frostFactor:0.2,thresholdTemp:15,
-  monthFactors:[1,1,.8,.7,.5,.2,.05,.05,.4,.7,.9,1],tapMode:'toggle',hgtLimit:15});
+const DEFAULT_SETTINGS=()=>({heatTemp:21,frostTemp:8,thresholdTemp:15,tapMode:'toggle',hgtLimit:15});
 
 /* ====================== Helfer ====================== */
 const $=(s,r=document)=>r.querySelector(s);
@@ -240,7 +240,7 @@ let S=load();
 function applyTheme(){const t=S.settings.theme||'auto';if(t==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.dataset.theme=t;
   const m=document.querySelector('meta[name=theme-color]');if(m)m.content=(t==='dark'||(t==='auto'&&matchMedia('(prefers-color-scheme:dark)').matches))?'#0d0d0d':'#2a78d6'}
 applyTheme();
-function save(){S.meta.modified=new Date().toISOString();try{localStorage.setItem(LS_KEY,JSON.stringify(S))}catch(e){toast('Speichern fehlgeschlagen: '+e.message)}}
+function save(){_dq.clear();S.meta.modified=new Date().toISOString();try{localStorage.setItem(LS_KEY,JSON.stringify(S))}catch(e){toast('Speichern fehlgeschlagen: '+e.message)}}
 function setDay(k,patch){
   const r={...(S.days[k]||{}),...patch};
   for(const f of['e','p']) if(r[f]==null||r[f]==='') delete r[f];
@@ -251,25 +251,49 @@ function setDay(k,patch){
 const isHeated=k=>S.days[k]?.h===1;
 
 /* ====================== Berechnung (Kostenmodell) ======================
-   Gewichtung je Quartal = Mittel der Monatsfaktoren (wie in der Numbers-Vorlage).
-   Gewichtete Tage = Heiztage*Gew + Frosttage*Gew*Frostfaktor
-   Kosten werden im Verhältnis der gewichteten Tage auf Heiz-/Frostschutztage verteilt. */
+   Gewicht je Tag = Heizgradtage aus den Wetterdaten (Heiztag: Heiztemp − Tagesmittel unter der Heizgrenze,
+   Frostschutz: Frosttemp − Tagesmittel). Fehlende (künftige) Tage: Klimamittel derselben Tage aus den Vorjahren.
+   Kosten werden im Verhältnis der Heizgradtage auf Heiz-/Frostschutztage verteilt. */
+const _dq=new Map();let _cn=null;
+function climNormals(){
+  const ck=(WX.at||'')+'|'+Object.keys(WX.t).length;if(_cn&&_cn.k===ck)return _cn.m;
+  const sum={},cnt={};
+  for(const k in WX.t){const md=k.slice(5);sum[md]=(sum[md]||0)+WX.t[k];cnt[md]=(cnt[md]||0)+1}
+  const mds=[];for(let m=0;m<12;m++)for(let d=1;d<=dim(2024,m);d++)mds.push(`${pad(m+1)}-${pad(d)}`);
+  const n=mds.length,raw=mds.map(md=>cnt[md]?sum[md]/cnt[md]:null),m={};
+  mds.forEach((md,i)=>{let s=0,c=0;for(let j=-3;j<=3;j++){const v=raw[(i+j+n)%n];if(v!=null){s+=v;c++}}if(c)m[md]=s/c});
+  _cn={k:ck,m};return m;
+}
+function qDemand(y,q){
+  const ck=`${y}-${q}|${WX.at}`;if(_dq.has(ck))return _dq.get(ck);
+  let res=null;
+  if(Object.keys(WX.t).length){
+    const s=S.settings,m0=(q-1)*3,cn=climNormals();let h21=0,h8=0,nA=0,nN=0,days=0;
+    for(let m=m0;m<m0+3;m++)for(let d=1;d<=dim(y,m);d++){
+      days++;const k=key(y,m,d);let T=WX.t[k];
+      if(T==null){T=cn[k.slice(5)];if(T==null)continue;nN++}else nA++;
+      const on=isHeated(k);
+      if(on)h21+=T<(s.hgtLimit??15)?Math.max(0,s.heatTemp-T):0;else h8+=Math.max(0,s.frostTemp-T)}
+    if(nA+nN>=days*0.9){const f=days/(nA+nN);res={h21:h21*f,h8:h8*f,est:nN>0}}
+  }
+  _dq.set(ck,res);return res;
+}
 function qInfo(y,q){
-  const m0=(q-1)*3, F=MF(), ff=S.settings.frostFactor;
+  const m0=(q-1)*3;
   let days=0,d21=0,eD=0,pD=0,eN=0,pN=0;
   for(let m=m0;m<m0+3;m++)for(let d=1;d<=dim(y,m);d++){
     const k=key(y,m,d);days++;const r=S.days[k];
     if(r?.h===1)d21++;
     if(r?.e!=null){eD+=r.e;eN++} if(r?.p!=null){pD+=r.p;pN++}
   }
-  const d8=days-d21, gew=(F[m0]+F[m0+1]+F[m0+2])/3;
-  const wd21=d21*gew, wd8=d8*gew*ff, wt=wd21+wd8, share21=wt?wd21/wt:0;
+  const d8=days-d21, dm=qDemand(y,q);
+  const wd21=dm?dm.h21:0, wd8=dm?dm.h8:0, wt=wd21+wd8, share21=wt?wd21/wt:0, wEst=!!dm?.est;
   const rec=S.quarters[`${y}-Q${q}`]||{}, c=rec.c??null;
   const e=rec.e??(eN?eD:null), p=rec.p??(pN?pD:null);
   const start=key(y,m0,1), end=key(y,m0+2,dim(y,m0+2));
-  return{y,q,key:`${y}-Q${q}`,start,end,days,d21,d8,gew,wd21,wd8,wt,share21,
+  return{y,q,key:`${y}-Q${q}`,start,end,days,d21,d8,wd21,wd8,wt,wEst,share21,
     c,cost21:c!=null?c*share21:null,cost8:c!=null?c*(1-share21):null,
-    u:(c!=null&&wt>0)?c/wt:null,                 // CHF je gewichtetem Tag ("ø Tag")
+    u:(c!=null&&wt>0)?c/wt:null,                 // CHF je Heizgradtag
     nur21:(c!=null&&d21>0)?c/d21:null,           // alle Kosten auf Heiztage
     proTag:c!=null?c/days:null,
     e,p,eFromDays:rec.e==null&&eN>0,pFromDays:rec.p==null&&pN>0,eDays:eN?eD:null,pDays:pN?pD:null,
@@ -304,7 +328,7 @@ function forecast(y,q){
    Quelle: MeteoSchweiz (Open Data, ogd-smn, Tagesmittel 2 m: tre200d0). Nähe: Ulrichen 1346 m. */
 const WX_KEY='hkb.wx.v1', WX_STATION='ulr', WX_BASE='https://data.geo.admin.ch/ch.meteoschweiz.ogd-smn/';
 let WX=(()=>{try{const r=JSON.parse(localStorage.getItem(WX_KEY)||'null');if(r&&r.t)return r}catch(e){}return{st:WX_STATION,t:{},at:null}})();
-const wxSave=()=>{try{localStorage.setItem(WX_KEY,JSON.stringify(WX))}catch(e){console.warn(e)}};
+const wxSave=()=>{_dq.clear();try{localStorage.setItem(WX_KEY,JSON.stringify(WX))}catch(e){console.warn(e)}};
 function wxParse(text,minY,out){
   const L=text.split(/\r?\n/);const hd=(L[0]||'').split(';');
   const iD=hd.indexOf('reference_timestamp'),iT=hd.indexOf('tre200d0');if(iD<0||iT<0)return 0;
@@ -325,22 +349,6 @@ async function wxFetch(){
 const wxAge=()=>WX.at?(Date.now()-new Date(WX.at))/36e5:Infinity;
 const wxLast=()=>{const ks=Object.keys(WX.t);return ks.length?ks.reduce((a,b)=>a>b?a:b):null};
 /* Heizgradtage je Tagesstatus: Heiztag → (Heiztemp − Tmittel) nur unter der Heizgrenze, Frostschutz → (Frosttemp − Tmittel) */
-/* Monatsgewichte: automatisch aus Wetterdaten (mittlerer Heizbedarf je Kalendermonat, höchster Monat = 100 %) oder von Hand */
-let _mfc=null;
-function autoMonthFactors(){
-  const s=S.settings,ck=[WX.at,Object.keys(WX.t).length,s.heatTemp,s.hgtLimit,todayKey().slice(0,7)].join('|');
-  if(_mfc&&_mfc.k===ck)return _mfc.v;
-  const acc=Array.from({length:12},()=>[]),cur=todayKey().slice(0,7);
-  const ym=new Map();
-  for(const k in WX.t){const ky=k.slice(0,7);if(ky>=cur)continue;const T=WX.t[k];
-    const dmd=T<(s.hgtLimit??15)?Math.max(0,s.heatTemp-T):0;const e=ym.get(ky)||{n:0,s:0};e.n++;e.s+=dmd;ym.set(ky,e)}
-  ym.forEach((e,ky)=>{const y=+ky.slice(0,4),m=+ky.slice(5,7)-1;if(e.n>=dim(y,m)*0.9)acc[m].push(e.s/e.n)});
-  let v=null;
-  if(acc.every(a=>a.length>=1)){const mm=acc.map(a=>mean(a)),mx=Math.max(...mm);if(mx>0)v=mm.map(x=>Math.max(0.02,x/mx))}
-  _mfc={k:ck,v};return v;
-}
-const autoMF=()=>S.settings.autoFactors!==false;
-const MF=()=>(autoMF()&&autoMonthFactors())||S.settings.monthFactors;
 const frostRun=()=>S.settings.frostRun??S.settings.frostTemp;
 function hgtDay(k){
   const T=WX.t[k];if(T==null)return null;const s=S.settings;
@@ -357,7 +365,7 @@ function qHgt(x,thr=frostRun()){
 function consQuarters(){
   const out=[];yearRange().forEach(y=>[1,2,3,4].forEach(q=>{
     const x=qInfo(y,q);if(x.e==null||!(x.e>0)||x.end>=todayKey())return;
-    out.push({...x,hg:qHgt(x),perDay:x.e/x.days,perW:x.wt>0?x.e/x.wt:null})}));
+    out.push({...x,hg:qHgt(x),perDay:x.e/x.days})}));
   return out;
 }
 function fit2(rows,fa,fb,fy){ // y ≈ a·fa + b·fb (ohne Achsenabschnitt)
@@ -604,19 +612,21 @@ function qCard(x){
    <div class="row" style="margin-top:2px;justify-content:space-between">${hint('e',x.eFromDays,x.eDays)}${hint('p',x.pFromDays,x.pDays)}</div>
    <hr><dl class="kv">
      <dt>Heiztage / Frostschutztage</dt><dd>${x.d21} / ${x.d8}</dd>
-     <dt>Gewichtung Quartal</dt><dd>${pct(x.gew,0)}</dd>
+     <dt>Heizgradtage Quartal</dt><dd>${x.wt>0?nf(x.wt,0)+(x.wEst?' <span class="muted small">(teils geschätzt)</span>':''):'–'}</dd>
      <dt>Kosten Heiztage</dt><dd>${chf(x.cost21)}</dd>
      <dt>Kosten Frostschutztage</dt><dd>${chf(x.cost8)}</dd>
-     <dt>CHF je gewichtetem Tag («ø Tag»)</dt><dd>${chf(x.u)}</dd>
+     <dt>CHF je Heizgradtag</dt><dd>${chf(x.u)}</dd>
      <dt>CHF je Heiztag (alles auf Heiztage)</dt><dd>${chf(x.nur21)}</dd>
      <dt>CHF je Kalendertag</dt><dd>${chf(x.proTag)}</dd>
      <dt>CHF je kWh Verbrauch</dt><dd>${x.chfPerKwh!=null?'CHF '+nf(x.chfPerKwh,3):'–'}</dd>
    </dl></div>`;
 }
 function renderKosten(){
+  if(!ui.wxTry&&wxAge()>20&&navigator.onLine!==false){ui.wxTry=true;wxFetch().then(()=>{if(ui.tab==='kosten')renderKosten()}).catch(e=>console.warn('Wetter',e))}
   const el=$('#v-kosten'),y=ui.ky,yi=yInfo(y);
   const fc=[1,2,3,4].map(q=>forecast(y,q)).filter(Boolean);
   el.innerHTML=`${ysel('ky',y)}
+  ${Object.keys(WX.t).length?'':'<div class="note warn" style="margin-bottom:12px">Für die Aufteilung der Kosten und die Prognose braucht die App Wetterdaten (werden beim Öffnen geladen; sonst Daten → Einstellungen → «Wetterdaten jetzt laden»).</div>'}
   <div class="qgrid">${yi.qs.map(qCard).join('')}</div>
   <div class="card" style="margin-top:14px"><h2>Total ${y}</h2>
     <dl class="kv">
@@ -624,17 +634,17 @@ function renderKosten(){
       <dt>Stromkosten (${yi.nC} von 4 Quartalen abgerechnet)</dt><dd>${chf(yi.chf)}</dd>
       <dt>Verbrauch</dt><dd>${kwhF(yi.e)}</dd>
       <dt>PV-Produktion</dt><dd>${kwhF(yi.p)}</dd>
-      <dt>CHF je gewichtetem Tag</dt><dd>${chf(yi.u)}</dd>
+      <dt>CHF je Heizgradtag</dt><dd>${chf(yi.u)}</dd>
       <dt>CHF je Heiztag</dt><dd>${chf(yi.nur21)}</dd>
       <dt>CHF je kWh Verbrauch</dt><dd>${yi.chfPerKwh!=null?'CHF '+nf(yi.chfPerKwh,3):'–'}</dd>
     </dl>
     ${fc.length?`<hr><h3>Schätzung offene Quartale</h3>${fc.map(f=>`<p class="small" style="margin:4px 0">Q${f.cur.q}: ca. <b>${chf(f.est,0)}</b> (Spanne ${chf(f.lo,0)} – ${chf(f.hi,0)}), Basis ${f.cur.d21} Heiztage / ${f.cur.d8} Frostschutztage inkl. geplanter Tage, ø der Vorjahre (${f.n}×)</p>`).join('')}`:''}
   </div>
   <details class="how card"><summary>Wie wird gerechnet?</summary>
-   <p><b>Gewichtung:</b> Jedes Quartal erhält ein Gewicht aus dem Mittel der Monatsfaktoren (Daten → Einstellungen), z. B. Q1 = (100 + 100 + 80) / 3 = 93 %. Das bildet ab, dass ein Heiztag im Januar mehr kostet als im Juli.</p>
-   <p><b>Gewichtete Tage</b> = Heiztage × Gewicht + Frostschutztage × Gewicht × Frostfaktor (Standard 20 %). Die Stromkosten des Quartals werden im Verhältnis dieser gewichteten Tage auf Heiz- und Frostschutztage verteilt.</p>
-   <p><b>CHF je gewichtetem Tag («ø Tag»)</b> = Quartalskosten ÷ gewichtete Tage. <b>CHF je Heiztag</b> = alle Kosten ÷ Heiztage. Jahreswerte rechnen nur mit abgerechneten Quartalen. Photovoltaik-Gutschriften (negative Beträge) verfälschen die Kostenmodelle im Sommer, die kWh-Werte nicht.</p>
-   <p><b>Schätzung:</b> Mittelwert von «CHF je gewichtetem Tag» desselben Quartals aus den Vorjahren (nur positive Werte) × gewichtete Tage des offenen Quartals.</p>
+   <p><b>Heizgradtage:</b> Jeder Tag erhält ein Gewicht aus dem Wetter (MeteoSchweiz, Station Ulrichen): Heiztag = Heiztemperatur − Tagesmittel (nur unter der Heizgrenze), Frostschutztag = Frostschutz-Temperatur − Tagesmittel. Das bildet ab, dass ein Heiztag im Januar mehr kostet als im Juli und Frostschutz nur bei Kälte heizt.</p>
+   <p>Die Stromkosten des Quartals werden im Verhältnis der Heizgradtage von Heiz- und Frostschutztagen aufgeteilt. Tage ohne Messwert (künftige Tage) werden mit dem Klimamittel derselben Kalendertage aus den Vorjahren gerechnet.</p>
+   <p><b>CHF je Heizgradtag</b> = Quartalskosten ÷ Heizgradtage des Quartals. <b>CHF je Heiztag</b> = alle Kosten ÷ Heiztage. Jahreswerte rechnen nur mit abgerechneten Quartalen. Photovoltaik-Gutschriften (negative Beträge) verfälschen die Kostenmodelle im Sommer, die kWh-Werte nicht.</p>
+   <p><b>Schätzung:</b> Mittelwert von «CHF je Heizgradtag» desselben Quartals aus den Vorjahren (nur positive Werte) × erwartete Heizgradtage des offenen Quartals (bisheriges Wetter, danach Klimamittel, geplante Heiztage eingerechnet).</p>
   </details>`;
 }
 $('#v-kosten').addEventListener('click',e=>{const b=e.target.closest('button');if(b?.dataset.y){ui.ky+=+b.dataset.y;renderKosten()}});
@@ -763,7 +773,7 @@ function drawLines(plot,spec,w,hidden){
 /* ====================== Tab: Analyse ====================== */
 function renderAnalyse(){
   const el=$('#v-analyse'),yrs=yearRange().filter(y=>y<=new Date().getFullYear()),yis=yrs.map(yInfo),now=new Date().getFullYear();
-  const kpi=`<div class="scroll"><table><thead><tr><th>Jahr</th><th>Heiztage</th><th>Kosten</th><th>CHF/Heiztag</th><th>CHF/gew. Tag</th><th>kWh Verbr.</th><th>kWh PV</th><th>CHF/kWh</th></tr></thead><tbody>${
+  const kpi=`<div class="scroll"><table><thead><tr><th>Jahr</th><th>Heiztage</th><th>Kosten</th><th>CHF/Heiztag</th><th>CHF/HGT</th><th>kWh Verbr.</th><th>kWh PV</th><th>CHF/kWh</th></tr></thead><tbody>${
     yis.map(x=>`<tr><td>${x.y}${x.nC<4?'*':''}</td><td>${x.d21}</td><td>${x.chf!=null?chf(x.chf,0):'–'}</td><td>${x.nur21!=null?nf(x.nur21,2):'–'}</td><td>${x.u!=null?nf(x.u,2):'–'}</td><td>${x.e!=null?nf(x.e,0):'–'}</td><td>${x.p!=null?nf(x.p,0):'–'}</td><td>${x.chfPerKwh!=null?nf(x.chfPerKwh,3):'–'}</td></tr>`).join('')}</tbody></table></div>
     <p class="small muted" style="margin:8px 0 0">* nicht alle vier Quartale abgerechnet – Kosten und Kennzahlen nur über die abgerechneten Quartale.</p>`;
   const fcs=[];[1,2,3,4].forEach(q=>{const f=forecast(now,q);if(f)fcs.push(f)});
@@ -783,8 +793,8 @@ function renderAnalyse(){
       <dt>Heiztag / ${mDays} (Modell)</dt><dd>${mA?nf(mA.a,1)+' kWh / '+nf(mA.b,1)+' kWh <span class="muted small">('+nf(mA.b/mA.a*100,0)+' % eines Heiztags · R² '+nf(mA.r2,2)+' · '+mA.n+' Quartale)</span>':'–'}</dd>
       <dt>je Heizgradtag (Wetter)</dt><dd>${kH?nf(kH,1)+' kWh <span class="muted small">(R² '+(mH?nf(mH.r2,2):'–')+' · '+cqH.length+' Quartale)</span>':(hasWx?'– <span class="muted small">(zu wenig Wetterdaten)</span>':'– <span class="muted small">(Wetterdaten werden geladen …)</span>')}</dd>
     </dl>
-    <div class="scroll" style="margin-top:10px"><table><thead><tr><th>Quartal</th><th>Heiztage</th><th>Frost aktiv</th><th>kWh</th><th>kWh/Tag</th><th>kWh/gew. Tag</th><th>Heizgradtage</th><th>kWh/HGT</th></tr></thead><tbody>${
-      cq.map(x=>`<tr><td>Q${x.q} ${x.y}</td><td>${x.d21}</td><td>${x.hg?nf(x.hg.n8a,0):'–'}</td><td>${nf(x.e,0)}</td><td>${nf(x.perDay,1)}</td><td>${x.perW!=null?nf(x.perW,1):'–'}</td><td>${x.hg?nf(x.hg.h,0):'–'}</td><td>${x.hg&&x.hg.h>0?nf(x.e/x.hg.h,2):'–'}</td></tr>`).join('')}</tbody></table></div>
+    <div class="scroll" style="margin-top:10px"><table><thead><tr><th>Quartal</th><th>Heiztage</th><th>Frost aktiv</th><th>kWh</th><th>kWh/Tag</th><th>Heizgradtage</th><th>kWh/HGT</th></tr></thead><tbody>${
+      cq.map(x=>`<tr><td>Q${x.q} ${x.y}</td><td>${x.d21}</td><td>${x.hg?nf(x.hg.n8a,0):'–'}</td><td>${nf(x.e,0)}</td><td>${nf(x.perDay,1)}</td><td>${x.hg?nf(x.hg.h,0):'–'}</td><td>${x.hg&&x.hg.h>0?nf(x.e/x.hg.h,2):'–'}</td></tr>`).join('')}</tbody></table></div>
     <p class="small muted" style="margin:8px 0 0"><b>Ø je Kalendertag</b> über 12 Monate gleicht die Jahreszeit aus. Das <b>Modell</b> schätzt per Ausgleichsrechnung, was ein Heiztag und ein Frostschutztag mit Heizbetrieb (Tagesmittel unter ${nf(frostRun(),1)} °C, im Kalender orange) im Mittel verbrauchen. Frostschutztage ohne Heizbetrieb zählen 0. <b>Frost aktiv</b> = Anzahl dieser Tage im Quartal. <b>Heizgradtage</b>: Heiztag = ${S.settings.heatTemp} − Tagesmittel (nur unter ${S.settings.hgtLimit??15} °C), Frostschutz = ${S.settings.frostTemp} − Tagesmittel; Wetter MeteoSchweiz, Station Ulrichen (1346 m), Stand ${WX.at?new Date(WX.at).toLocaleDateString('de-CH'):'–'}. Bellwald liegt höher – Werte sind eine Näherung.</p></div>
   <div class="card"><h2>Ø Verbrauch je Tag (gleitend 12 Monate)</h2>${r12.length?'<div id="c6"></div>':'<p class="muted">Dafür braucht es vier aufeinanderfolgende abgeschlossene Quartale mit kWh.</p>'}</div>
   <div class="card"><h2>kWh je Heizgradtag</h2>${cqH.length?'<div id="c7"></div><p class="small muted" style="margin-bottom:0">Niedriger = effizienter bzw. weniger Verbrauch bei gleichem Wetter und gleicher Heizart.</p>':'<p class="muted">Noch keine Wetterdaten für die Quartale mit kWh.</p>'}</div>`:'';
@@ -795,8 +805,8 @@ function renderAnalyse(){
   <div class="card"><h2>Heiztage pro Monat</h2><div id="c2"></div></div>
   <div class="card"><h2>Stromkosten pro Quartal</h2><div id="c3"></div><p class="small muted" style="margin-bottom:0">Negative Balken: Gutschrift aus PV-Einspeisung.</p></div>
   <div class="card"><h2>Verbrauch und PV-Produktion pro Quartal</h2>${qWithKwh.length?'<div id="c4"></div>':'<p class="muted">Noch keine kWh-Daten erfasst.</p>'}</div>
-  <div class="card"><h2>CHF je gewichtetem Tag</h2><div id="c5"></div><p class="small muted" style="margin-bottom:0">Kostenniveau pro «Normal-Heiztag» nach Abzug von Jahreszeit und Frostschutztagen – zeigt Tarif- und Verbrauchsentwicklung. Q3 ist ausgeblendet, weil PV-Gutschriften den Wert dort verzerren (Legende antippen zum Einblenden).</p></div>
-  ${fcs.length?`<div class="card"><h2>Prognose ${now}</h2>${fcs.map(f=>`<p style="margin:4px 0">Q${f.cur.q}: ca. <b>${chf(f.est,0)}</b> <span class="muted small">(${chf(f.lo,0)} – ${chf(f.hi,0)})</span></p>`).join('')}<p class="small muted" style="margin-bottom:0">Schätzung aus den gewichteten Tagen und dem ø Preis je gewichtetem Tag desselben Quartals der Vorjahre. Geplante Heiztage (künftig) fliessen ein.</p></div>`:''}`;
+  <div class="card"><h2>CHF je Heizgradtag</h2><div id="c5"></div><p class="small muted" style="margin-bottom:0">Kostenniveau pro Heizgradtag, also bereinigt um Wetter, Jahreszeit und Frostschutztage – zeigt Tarif- und Verbrauchsentwicklung. Q3 ist ausgeblendet, weil PV-Gutschriften den Wert dort verzerren (Legende antippen zum Einblenden).</p></div>
+  ${fcs.length?`<div class="card"><h2>Prognose ${now}</h2>${fcs.map(f=>`<p style="margin:4px 0">Q${f.cur.q}: ca. <b>${chf(f.est,0)}</b> <span class="muted small">(${chf(f.lo,0)} – ${chf(f.hi,0)})</span></p>`).join('')}<p class="small muted" style="margin-bottom:0">Schätzung aus den erwarteten Heizgradtagen und dem ø Preis je Heizgradtag desselben Quartals der Vorjahre. Geplante Heiztage (künftig) fliessen ein.</p></div>`:''}`;
   mountChart($('#c1'),{type:'columns',cats:yrs.map(String),series:[{name:'Heiztage',color:'var(--s1)',values:yis.map(x=>x.d21)}],fmt:v=>nf(v,0),labels:true,title:'Heiztage pro Jahr'});
   mountChart($('#c2'),{type:'lines',cats:MON,series:ys.map(y=>({name:String(y),color:yearColor(y),values:monthCounts(y).map((v,m)=>(y===now&&m>new Date().getMonth()&&v===0)?null:v)})),fmt:v=>nf(v,0)+' Tage',yTick:v=>nf(v,0),title:'Heiztage pro Monat'});
   mountChart($('#c3'),{type:'columns',cats:['Q1','Q2','Q3','Q4'],series:yrs.map((y,i)=>({name:String(y),color:yearColor(y),values:yis[i].qs.map(x=>x.c)})),fmt:v=>chf(v,2),title:'Stromkosten pro Quartal'});
@@ -806,7 +816,7 @@ function renderAnalyse(){
   if(cqH.length)mountChart($('#c7'),{type:'columns',cats:cqH.map(x=>x.q===1?String(x.y):''),catTitle:i=>`Q${cqH[i].q} ${cqH[i].y}`,series:[{name:'kWh je Heizgradtag',color:'var(--s3)',values:cqH.map(x=>x.hg.h>0?x.e/x.hg.h:null)}],fmt:v=>nf(v,2)+' kWh',yw:40,title:'kWh je Heizgradtag'});
   if(!ui.wxTry&&wxAge()>20&&navigator.onLine!==false){ui.wxTry=true;wxFetch().then(()=>{if(ui.tab==='analyse')renderAnalyse()}).catch(e=>console.warn('Wetter',e))}
   mountChart($('#c5'),{type:'lines',cats:yrs.map(String),hiddenInit:[2],
-    series:[1,2,3,4].map((q,qi)=>({name:'Q'+q,color:`var(--s${qi+1})`,values:yis.map(x=>x.qs[qi].u)})),fmt:v=>chf(v,2),yTick:v=>nf(v,0),title:'CHF je gewichtetem Tag'});
+    series:[1,2,3,4].map((q,qi)=>({name:'Q'+q,color:`var(--s${qi+1})`,values:yis.map(x=>x.qs[qi].u)})),fmt:v=>chf(v,2),yTick:v=>nf(v,0),title:'CHF je Heizgradtag'});
 }
 
 /* ====================== Import / Export ====================== */
@@ -912,9 +922,9 @@ async function exportDaysCsv(){
   await deliver(`heiztage_${stamp()}.csv`,'﻿'+lines.join('\r\n'),'text/csv');
 }
 async function exportQuartersCsv(){
-  const lines=['Quartal;Von;Bis;Heiztage;Frostschutztage;Gewichtung;Stromkosten_CHF;Verbrauch_kWh;PV_kWh;CHF_je_gew_Tag;CHF_je_Heiztag;CHF_je_kWh'];
+  const lines=['Quartal;Von;Bis;Heiztage;Frostschutztage;Heizgradtage;Stromkosten_CHF;Verbrauch_kWh;PV_kWh;CHF_je_Heizgradtag;CHF_je_Heiztag;CHF_je_kWh'];
   yearRange().forEach(y=>[1,2,3,4].forEach(q=>{const x=qInfo(y,q);if(x.c==null&&x.e==null&&x.p==null&&x.d21===0)return;
-    lines.push([`${y}-Q${q}`,fmtDate(x.start),fmtDate(x.end),x.d21,x.d8,x.gew.toFixed(4),x.c??'',x.e??'',x.p??'',x.u?.toFixed(2)??'',x.nur21?.toFixed(2)??'',x.chfPerKwh?.toFixed(4)??''].map(csvCell).join(';'))}));
+    lines.push([`${y}-Q${q}`,fmtDate(x.start),fmtDate(x.end),x.d21,x.d8,x.wt.toFixed(1),x.c??'',x.e??'',x.p??'',x.u?.toFixed(2)??'',x.nur21?.toFixed(2)??'',x.chfPerKwh?.toFixed(4)??''].map(csvCell).join(';'))}));
   await deliver(`quartale_${stamp()}.csv`,'﻿'+lines.join('\r\n'),'text/csv');
 }
 
@@ -942,7 +952,6 @@ function renderDaten(){
     <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <label class="f">Heiztemperatur (°C)<input type="text" inputmode="decimal" data-s="heatTemp" value="${s.heatTemp}"></label>
       <label class="f">Frostschutz (°C)<input type="text" inputmode="decimal" data-s="frostTemp" value="${s.frostTemp}"></label>
-      <label class="f">Frostschutz-Verbrauch (% von Heiztag)<input type="text" inputmode="decimal" data-s="frostFactor" value="${s.frostFactor*100}"></label>
       <label class="f">Heiztag ab Solltemp. (°C, Import)<input type="text" inputmode="decimal" data-s="thresholdTemp" value="${s.thresholdTemp}"></label>
       <label class="f">Heizgrenze Aussentemp. (°C, Heizgradtage)<input type="text" inputmode="decimal" data-s="hgtLimit" value="${s.hgtLimit??15}"></label>
       <label class="f">Frostschutz heizt bei Tagesmittel unter (°C)<input type="text" inputmode="decimal" data-s="frostRun" value="${s.frostRun??s.frostTemp}"></label>
@@ -950,12 +959,7 @@ function renderDaten(){
     ${(()=>{const b=bestFrostRun();const cur=frostRun();return b?`<p class="small muted" style="margin:8px 0 0">Beste Übereinstimmung mit euren kWh: <b>${nf(b.t,1)} °C</b> (R² ${nf(b.r2,2)})${b.t===cur?' – bereits eingestellt.':` <button class="btn sm" id="bFrostBest" data-t="${b.t}" style="margin-left:6px">Übernehmen</button>`}</p>`:''})()}
     <h3 style="margin-top:16px">Wetterdaten</h3>
     <p class="small muted" style="margin:0 0 8px">MeteoSchweiz, Station Ulrichen (1346 m), Tagesmittel: ${Object.keys(WX.t).length?Object.keys(WX.t).length+' Tage bis '+fmtDate(wxLast())+' · geladen '+new Date(WX.at).toLocaleDateString('de-CH'):'noch nicht geladen'}. Wird beim Öffnen der Analyse automatisch aktualisiert.</p>
-    <div class="row"><button class="btn sm" id="bWx">Wetterdaten jetzt laden</button></div>
-    <h3 style="margin-top:16px">Heizbedarf je Monat (%)</h3>
-    ${(()=>{const auto=autoMF(),av=autoMonthFactors(),on=auto&&!!av,F=MF();return `
-    <label class="f" style="flex-direction:row;align-items:center;gap:10px;margin-bottom:10px"><input type="checkbox" data-autof ${auto?'checked':''} style="width:auto"><span>Automatisch aus Wetterdaten ableiten<br><small class="muted">${auto?(av?'Mittlerer Heizbedarf je Monat laut Ulrichen-Daten (kältester Monat = 100 %).':'Noch nicht möglich – es braucht Wetterdaten für alle 12 Monate; bis dahin gelten die eigenen Werte.'):'Eigene Werte (von Hand).'}</small></span></label>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));gap:8px">${F.map((f,i)=>`<label class="f" style="margin:0">${MON[i]}<input type="text" inputmode="decimal" data-mf="${i}" value="${Math.round(f*1000)/10}" ${on?'disabled':''}></label>`).join('')}</div>`})()}
-    <p class="small muted" style="margin-bottom:0">Die Monatswerte bestimmen die Gewichtung der Quartale im Kostenmodell und in der Prognose.</p></div>
+    <div class="row"><button class="btn sm" id="bWx">Wetterdaten jetzt laden</button></div></div>
   <div class="card"><h2>Info</h2>
     <dl class="kv"><dt>Version</dt><dd>${VERSION}</dd><dt>Speicher</dt><dd id="persist">…</dd></dl>
     <details class="how" style="margin-top:10px"><summary>Änderungsprotokoll</summary>${CHANGELOG.map(c=>`<p><b>${c.v}</b> · ${c.d}<br>${c.t.map(esc).join('<br>')}</p>`).join('')}</details>
@@ -983,14 +987,11 @@ $('#v-daten').addEventListener('click',e=>{
 });
 $('#v-daten').addEventListener('change',e=>{
   const t=e.target;
-  if(t.hasAttribute('data-autof')){S.settings.autoFactors=t.checked;save();renderDaten();return}
   if(t.hasAttribute('data-daily')){S.settings.showDaily=t.checked;save();return}
   if(t.hasAttribute('data-theme-sel')){S.settings.theme=t.value;save();applyTheme();return}
   if(t.dataset.m){ui.csv.map[t.dataset.m]=+t.value;renderCsvPanel();return}
   if(t.dataset.s){let v=toNum(t.value);if(v==null||Number.isNaN(v)){toast('Ungültige Zahl');renderDaten();return}
-    if(t.dataset.s==='frostFactor')v=Math.max(0,Math.min(1,v/100));S.settings[t.dataset.s]=v;save();renderDaten();return}
-  if(t.dataset.mf!=null){const v=toNum(t.value);if(v==null||Number.isNaN(v)){toast('Ungültige Zahl');renderDaten();return}
-    S.settings.monthFactors[+t.dataset.mf]=Math.max(0,v/100);save();renderDaten()}
+    S.settings[t.dataset.s]=v;save();renderDaten();return}
 });
 $('#fileJson').addEventListener('change',async e=>{
   const f=e.target.files[0];e.target.value='';if(!f)return;const txt=await f.text();

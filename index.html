@@ -815,7 +815,7 @@ function renderJahr(){
   const hasWx=Object.keys(WX.t).length>0;let nFz=0;
   const tal=S.settings.jahrTemp==='tal',dT=k=>tal?(WX.t[k]??null):wxT(k),dName=tal?'Tal (Ulrichen ≈ Geschinen)':'Bellwald geschätzt';
   const el=$('#v-jahr'),y=ui.jy,t=todayKey(),yi=yInfo(y);
-  const COLS=['d','kwh','chf','t'],COLN={d:'Σ',kwh:'kWh',chf:'CHF',t:'°C'},cols=COLS.filter(c=>(S.settings.jahrCols||['d']).includes(c));
+  const COLS=['d','g','kwh','chf','t'],COLN={d:'Σ',g:'HGT',kwh:'kWh',chf:'CHF',t:'°C'},cols=COLS.filter(c=>(S.settings.jahrCols||['d']).includes(c));
   let grid='<span></span>'+Array.from({length:31},(_,i)=>`<span class="hh">${[1,5,10,15,20,25,30].includes(i+1)?i+1:''}</span>`).join('')+cols.map(c=>`<button type="button" class="hh" data-colmenu aria-label="Spalten rechts wählen">${COLN[c]}</button>`).join('');
   const mc=monthCounts(y);
   for(let m=0;m<12;m++){
@@ -826,12 +826,12 @@ function renderJahr(){
       const k=key(y,m,d),on=isHeated(k),fz=!on&&wxT(k)!=null&&wxT(k)<frostRun();if(fz)nFz++;
       grid+=`<button class="hc${on?' on':fz?' fz':''}${k>t?' fut':''}${g}" data-k="${k}" aria-label="${fmtDate(k)}, ${on?'Heiztag':fz?'Frostschutz, heizt vermutlich':'Frostschutz'}${dT(k)!=null?', '+dT(k).toFixed(1)+' °C':''}" title="${dT(k)!=null?dT(k).toFixed(1)+' °C ('+dName+'; '+(tal?'Bellwald geschätzt '+wxT(k).toFixed(1):'Ulrichen '+WX.t[k].toFixed(1))+' °C)':''}">${dT(k)!=null?`<span class="tmp">${String(Math.round(dT(k))).replace('-','−')}°</span>`:''}</button>`;
     }
-    const pe=cols.some(c=>c==='kwh'||c==='chf')&&hasWx?periodEst(key(y,m,1),key(y,m,dim(y,m))):null,pv=(v,no)=>(!pe||pe.noWx||(no&&!v))?'–':nf(v,0);
+    const pe=cols.some(c=>c==='kwh'||c==='chf'||c==='g')&&hasWx?periodEst(key(y,m,1),key(y,m,dim(y,m))):null,pv=(v,no)=>(!pe||pe.noWx||(no&&!v))?'–':nf(v,0);
     const tv=()=>{const a=[];for(let d=1;d<=dim(y,m);d++){const v=dT(key(y,m,d));if(v!=null)a.push(v)}return a.length?nf(mean(a),1).replace('-','−'):'–'};
-    grid+=cols.map(c=>`<span class="hs${g}">${c==='d'?mc[m]:c==='kwh'?pv(pe?.kwh,pe?.noKwh):c==='chf'?pv(pe?.chf,pe?.noChf):tv()}</span>`).join('');
+    grid+=cols.map(c=>`<span class="hs${g}">${c==='d'?mc[m]:c==='g'?(!pe||pe.noWx?'–':nf(pe.hgt,0)):c==='kwh'?pv(pe?.kwh,pe?.noKwh):c==='chf'?pv(pe?.chf,pe?.noChf):tv()}</span>`).join('');
   }
   el.innerHTML=`${ysel('jy',y)}
-  <div class="card"><div class="cardhd"><h2>Heiztage ${y}</h2>${ui.colmenu?`<div class="colmenu" role="group" aria-label="Spalten rechts">${COLS.map(c=>`<label><input type="checkbox" data-col="${c}" ${cols.includes(c)?'checked':''}>${{d:'Heiztage (Σ)',kwh:'kWh (geschätzt)',chf:'CHF (geschätzt)',t:'Ø Temperatur (°C)'}[c]}</label>`).join('')}</div>`:''}</div><div class="heat" style="grid-template-columns:2.4rem repeat(31,minmax(0,1fr))${cols.map(c=>c==='d'?' 2.4rem':' 3rem').join('')}">${grid}</div>
+  <div class="card"><div class="cardhd"><h2>Heiztage ${y}</h2>${ui.colmenu?`<div class="colmenu" role="group" aria-label="Spalten rechts">${COLS.map(c=>`<label><input type="checkbox" data-col="${c}" ${cols.includes(c)?'checked':''}>${{d:'Heiztage (Σ)',g:'Heizgradtage (Σ)',kwh:'kWh (geschätzt)',chf:'CHF (geschätzt)',t:'Ø Temperatur (°C)'}[c]}</label>`).join('')}</div>`:''}</div><div class="heat" style="grid-template-columns:2.4rem repeat(31,minmax(0,1fr))${cols.map(c=>c==='d'?' 2.4rem':' 3rem').join('')}">${grid}</div>
     <div class="legendrow"><span><i style="background:var(--heat)"></i>Heiztag</span><span><i style="background:var(--off)"></i>Frostschutz</span>${hasWx?`<span><i style="background:var(--fz)"></i>Frostschutz heizt vermutlich</span>`:''}<span><i style="background:color-mix(in srgb,var(--heat) 35%,var(--page));outline:1px dashed var(--heat)"></i>geplant</span>${hasWx?`<span class="tsw" role="group" aria-label="Angezeigte Temperaturen"><button type="button" data-tsw="bw" class="${tal?'':'on'}">Bellwald</button><button type="button" data-tsw="tal" class="${tal?'on':''}">Geschinen</button></span>`:''}</div>
     <p class="small muted" style="margin-bottom:0">Tag antippen zum Bearbeiten. Spalten rechts (Überschrift antippen): Heiztage, kWh, CHF und Ø Temperatur je Monat – kWh und CHF sind Schätzungen des Modells.</p></div>
   <div class="tiles">
@@ -876,7 +876,7 @@ $('#v-jahr').addEventListener('click',e=>{
 });
 
 $('#v-jahr').addEventListener('change',e=>{const t=e.target;
-  if(t.dataset.col){const cur=new Set(S.settings.jahrCols||['d']);t.checked?cur.add(t.dataset.col):cur.delete(t.dataset.col);if(!cur.size){cur.add(t.dataset.col);toast('Mindestens eine Spalte bleibt sichtbar')}S.settings.jahrCols=['d','kwh','chf','t'].filter(c=>cur.has(c));save();renderJahr();return}
+  if(t.dataset.col){const cur=new Set(S.settings.jahrCols||['d']);t.checked?cur.add(t.dataset.col):cur.delete(t.dataset.col);if(!cur.size){cur.add(t.dataset.col);toast('Mindestens eine Spalte bleibt sichtbar')}S.settings.jahrCols=['d','g','kwh','chf','t'].filter(c=>cur.has(c));save();renderJahr();return}
  if(!t.dataset.pz||!/^\d{4}-\d\d-\d\d$/.test(t.value))return;ui[t.dataset.pz]=t.value;renderJahr()});
 
 /* ====================== Tab: Kosten ====================== */
